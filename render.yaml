@@ -1,17 +1,18 @@
-# Render blueprint for Swarna Prabha — install-ready.
+# Render blueprint for Swarna Prabha — install-ready (free tier).
 #
-# Deploy: Render dashboard → New → Blueprint → pick this repo.
-# Render will prompt you once for the 4 values marked `sync: false` below
-# (three seed passwords + the storefront origin). Everything else is automatic:
+# Deploy: Render dashboard → New → Blueprint → connect
+#         https://github.com/sagarsy2050/swarna-prabha
+# Render prompts once for 3 seed passwords, then everything is automatic:
 #
-#   build      : npm ci && prisma generate            (API)   /  npm ci && vite build  (web)
-#   pre-deploy : prisma migrate deploy  (creates the `vector` extension + schema)
-#                then  node prisma/seed.js  (idempotent upserts)
-#   start      : node src/server.js
+#   build : npm ci && npx prisma generate
+#   start : npx prisma migrate deploy   (creates the `vector` extension + schema)
+#           && node prisma/seed.js       (idempotent — safe to re-run)
+#           && node src/server.js
 #
-# The API is served at https://swarna-prabha-api.onrender.com
-# The static build is also published here, but the canonical storefront is
-# GitHub Pages (see .github/workflows/deploy.yml + docs/DEPLOYMENT.md).
+# migrate + seed run at start because the free tier does not allow a
+# pre-deploy command; both are idempotent so running them on every boot is fine.
+#
+# API URL after deploy: https://swarna-prabha-api.onrender.com
 
 databases:
   - name: swarna-prabha-db
@@ -29,8 +30,8 @@ services:
     plan: free
     autoDeploy: true
     buildCommand: npm ci && npx prisma generate
-    preDeployCommand: npx prisma migrate deploy && node prisma/seed.js
-    startCommand: node src/server.js
+    # migrate must succeed; seed is best-effort (idempotent); then start.
+    startCommand: npx prisma migrate deploy && (node prisma/seed.js || true) && node src/server.js
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
@@ -42,7 +43,7 @@ services:
           name: swarna-prabha-db
           property: connectionString
 
-      # Auth — Render generates strong random values, no action needed.
+      # Auth — Render generates strong random values; no action needed.
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
@@ -52,12 +53,11 @@ services:
       - key: JWT_REFRESH_TTL
         value: 30d
 
-      # Storefront origin(s) allowed by CORS. Default is the GitHub Pages site;
-      # Render will let you override it at blueprint time (add your own domain,
-      # comma-separated, if you have one).
+      # Storefront origin allowed by CORS. Fixed to the GitHub Pages site — edit
+      # in the Render dashboard afterwards if you add a custom domain
+      # (comma-separated).
       - key: CORS_ORIGIN
         value: https://sagarsy2050.github.io
-        sync: false
 
       - key: PAYMENT_DRIVER
         value: manual
@@ -67,8 +67,8 @@ services:
         value: "Swarna Prabha <no-reply@swarnaprabha.local>"
 
       # File storage. Render free disks are ephemeral; the classified
-      # jewellery-images/ ship in the repo so they always redeploy. Switch to
-      # S3/R2 for user uploads by setting STORAGE_DRIVER=s3 and the S3_* vars.
+      # jewellery-images/ ship in the repo so they always redeploy. For user
+      # uploads set STORAGE_DRIVER=s3 and the S3_* vars in the dashboard.
       - key: STORAGE_DRIVER
         value: local
       - key: UPLOAD_DIR
@@ -77,7 +77,7 @@ services:
         value: https://swarna-prabha-api.onrender.com/uploads
 
       # Seed account passwords — YOU choose these at blueprint time. Emails are
-      # fixed (admin@ / jeweller@ / jeweller2@ / customer@swarnaprabha.local).
+      # fixed: admin@ / jeweller@ / jeweller2@ / customer@swarnaprabha.local
       - key: SEED_ADMIN_PASSWORD
         sync: false
       - key: SEED_JEWELLER_PASSWORD

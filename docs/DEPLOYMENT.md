@@ -20,23 +20,26 @@ by one setting — the API URL the storefront build targets.
    - `swarna-prabha-api` — the Express API at
      `https://swarna-prabha-api.onrender.com`
    - `swarna-prabha-web` — an optional static copy of the storefront
-3. Render prompts you **once** for the 4 `sync: false` values:
+3. Render prompts you **once** for the 3 `sync: false` values:
    | Variable | Enter |
    |---|---|
    | `SEED_ADMIN_PASSWORD` | a password for `admin@swarnaprabha.local` |
    | `SEED_JEWELLER_PASSWORD` | a password for `jeweller@` / `jeweller2@swarnaprabha.local` |
    | `SEED_CUSTOMER_PASSWORD` | a password for `customer@swarnaprabha.local` |
-   | `CORS_ORIGIN` | pre-filled `https://sagarsy2050.github.io` — add your own domain (comma-separated) if you have one |
+
+   (`CORS_ORIGIN` is fixed to `https://sagarsy2050.github.io`; edit it in the
+   dashboard afterwards if you add a custom domain.)
 4. Click **Apply**. Everything else is automatic:
    - **build:** `npm ci && npx prisma generate`
-   - **pre-deploy:** `npx prisma migrate deploy` — this also runs
+   - **start:** `npx prisma migrate deploy` — this also runs
      `CREATE EXTENSION IF NOT EXISTS "vector"` (pgvector is on Render's allowed
-     list) — then `node prisma/seed.js` (idempotent: 4 users, 6 categories,
-     96 products from `jewellery-images/`)
-   - **start:** `node src/server.js`
+     list) — then `node prisma/seed.js` (best-effort; idempotent: 4 users,
+     6 categories, 96 products), then `node src/server.js`.
+     The free tier has no pre-deploy hook, so migrate + seed run at start; both
+     are idempotent, so every restart is safe.
    - **health check:** `/api/health`
 
-No manual SQL, no manual seed. Re-deploys re-run migrate + seed safely.
+No manual SQL, no manual seed.
 
 **Sign in after deploy:** the seed emails are fixed
 (`admin@` / `jeweller@` / `jeweller2@` / `customer@swarnaprabha.local`); the
