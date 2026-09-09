@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { shopController } from '../controllers/shop.controller.js';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { authenticate, optionalAuth, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { idParam, slugParam, shopUpdateBody, shopAdminUpdateBody } from '../middleware/schemas.js';
 
 const router = Router();
 
-// Public discovery.
-router.get('/', shopController.list);
+// Public discovery (admins may pass ?all=1 to include inactive shops).
+router.get('/', optionalAuth, shopController.list);
 
 // A jeweller's own shop.
 router.get('/me', authenticate, requireRole('JEWELLER', 'ADMIN'), shopController.mine);

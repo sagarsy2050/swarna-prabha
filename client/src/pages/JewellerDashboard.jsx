@@ -1,745 +1,511 @@
-import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Check } from 'lucide-react';
-import { Image } from '@/components/ui/image';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import StatusBadge from '@/components/StatusBadge';
-import { PageLoader } from '@/components/Loading';
-import { toast } from '@/components/ui/sonner';
+import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '@/api/client';
-import { formatMoney, formatDate, titleCase } from '@/lib/utils';
+import { useAuth } from '@/lib/AuthContext';
+import { PageLoader } from '@/components/Loading';
+import StatusBadge from '@/components/StatusBadge';
+import { DashboardShell, Table, StatCard } from '@/components/dashboard/Shell';
+import { assetUrl, formatMoney, formatDate } from '@/lib/utils';
 
-const categories = ['ring', 'necklace', 'earrings', 'bracelet', 'pendant'];
-
-export default function JewellerDashboard() {
-  const [tab, setTab] = useState('requests');
-  return (
-    <div className="max-w-7xl mx-auto px-5 sm:px-8 py-14 sm:py-20">
-      <h1 className="font-display text-4xl sm:text-5xl text-neutral-900 mb-2">Jeweller Studio</h1>
-      <p className="text-neutral-500 mb-8">Publish designs, validate concepts, quote, and manage production.</p>
-
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="requests">Requests</TabsTrigger>
-          <TabsTrigger value="designs">Designs</TabsTrigger>
-          <TabsTrigger value="components">Components</TabsTrigger>
-          <TabsTrigger value="validations">Validations</TabsTrigger>
-          <TabsTrigger value="materials">Materials</TabsTrigger>
-          <TabsTrigger value="orders">Orders</TabsTrigger>
-          <TabsTrigger value="inventory">Inventory</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="requests">
-          <RequestsTab />
-        </TabsContent>
-        <TabsContent value="designs">
-          <DesignsTab />
-        </TabsContent>
-        <TabsContent value="components">
-          <ComponentsTab />
-        </TabsContent>
-        <TabsContent value="validations">
-          <ValidationsTab />
-        </TabsContent>
-        <TabsContent value="materials">
-          <MaterialsTab />
-        </TabsContent>
-        <TabsContent value="orders">
-          <OrdersTab />
-        </TabsContent>
-        <TabsContent value="inventory">
-          <InventoryTab />
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-}
-
-function useList(fetcher, deps = []) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const reload = () => {
-    setLoading(true);
-    fetcher()
-      .then((res) => setRows(res.data || []))
-      .catch((e) => toast.error(e.message))
-      .finally(() => setLoading(false));
-  };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(reload, deps);
-  return { rows, loading, reload };
-}
-
-/* ── Requests — drives the backend workflow engine ────────────────────────── */
-function RequestsTab() {
-  const { rows, loading, reload } = useList(() => api.designRequests.list({ sort: '-createdAt', pageSize: 100 }));
-  const act = async (fn, msg) => {
-    try {
-      await fn();
-      if (msg) toast(msg);
-      reload();
-    } catch (e) {
-      toast.error(e.message);
-    }
-  };
-  if (loading) return <PageLoader />;
-  if (!rows.length) return <Empty>No customer requests yet.</Empty>;
-  return (
-    <div className="space-y-4">
-      {rows.map((r) => {
-        const concepts = Array.isArray(r.aiConcepts) ? r.aiConcepts : [];
-        const c = concepts[r.selectedConcept] || concepts[0];
-        return (
-          <div key={r.id} className="bg-white rounded-2xl border border-neutral-200 p-6">
-            <div className="flex items-start justify-between gap-3 mb-2">
-              <div>
-                <h3 className="font-display text-2xl text-neutral-900">{r.designTitle}</h3>
-                <span className="text-xs uppercase tracking-wide text-gold-700">{r.category}</span>
-                <span className="text-xs text-neutral-400 ml-2">{r.customer?.email}</span>
-              </div>
-              <span className="inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-full bg-neutral-900 text-white">
-                {titleCase(r.workflowState || r.status)}
-              </span>
-            </div>
-            {c && (
-              <div className="bg-neutral-50 rounded-xl p-4 border border-neutral-100 mb-3 text-sm">
-                <p className="font-medium text-neutral-800">{c.name}</p>
-                <p className="text-neutral-600 mt-1">{c.description}</p>
-                <p className="text-xs text-neutral-500 mt-2">
-                  {c.materials} · ~{formatMoney(c.estimatedPrice ?? c.estimated_price)} · AI feasibility: {c.feasibility}
-                </p>
-              </div>
-            )}
-            {r.customerNotes && <p className="text-xs text-neutral-500 mb-2">Notes: {r.customerNotes}</p>}
-            <WorkflowStep request={r} act={act} />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-const DECISIONS = ['APPROVED', 'CHANGES_REQUIRED', 'REJECTED'];
-
-function WorkflowStep({ request: r, act }) {
-  const [mc, setMc] = useState({ material: true, stone: true, dimensions: true, structure: true, notes: '' });
-  const [comments, setComments] = useState('');
-  const [lines, setLines] = useState([{ label: 'Materials & making', quantity: 1, unitPrice: '' }]);
-  const [tax, setTax] = useState('');
-
-  const setLine = (i, k, v) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
-
-  if (r.workflowState === 'AI_CONCEPT_GENERATED') {
-    return (
-      <div className="border-t border-neutral-100 pt-4 space-y-3">
-        <p className="text-sm font-medium text-neutral-800">Manufacturing check</p>
-        <div className="flex flex-wrap gap-4 text-sm">
-          {['material', 'stone', 'dimensions', 'structure'].map((k) => (
-            <label key={k} className="flex items-center gap-1.5 capitalize">
-              <input type="checkbox" checked={mc[k]} onChange={(e) => setMc((m) => ({ ...m, [k]: e.target.checked }))} />
-              {k}
-            </label>
-          ))}
-        </div>
-        <Input placeholder="Notes (required changes, materials…)" value={mc.notes} onChange={(e) => setMc((m) => ({ ...m, notes: e.target.value }))} />
-        <div className="flex flex-wrap gap-2">
-          {DECISIONS.map((d) => (
-            <Button
-              key={d}
-              size="sm"
-              variant={d === 'APPROVED' ? 'default' : 'outline'}
-              className={d === 'REJECTED' ? 'border-rose-300 text-rose-700' : d === 'CHANGES_REQUIRED' ? 'border-amber-300 text-amber-700' : ''}
-              onClick={() =>
-                act(
-                  () =>
-                    api.designRequests.manufacturingCheck(r.id, {
-                      status: d,
-                      materialApproved: mc.material,
-                      stoneApproved: mc.stone,
-                      dimensionsApproved: mc.dimensions,
-                      structureApproved: mc.structure,
-                      notes: mc.notes || undefined,
-                    }),
-                  `Manufacturing check: ${titleCase(d)}`,
-                )
-              }
-            >
-              {titleCase(d)}
-            </Button>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (r.workflowState === 'MANUFACTURING_CHECK') {
-    return (
-      <div className="border-t border-neutral-100 pt-4 space-y-3">
-        <p className="text-sm font-medium text-neutral-800">Design / commercial review</p>
-        <Input placeholder="Comments to the customer" value={comments} onChange={(e) => setComments(e.target.value)} />
-        <div className="flex flex-wrap gap-2">
-          {DECISIONS.map((d) => (
-            <Button
-              key={d}
-              size="sm"
-              variant={d === 'APPROVED' ? 'default' : 'outline'}
-              className={d === 'REJECTED' ? 'border-rose-300 text-rose-700' : d === 'CHANGES_REQUIRED' ? 'border-amber-300 text-amber-700' : ''}
-              onClick={() => act(() => api.designRequests.review(r.id, { decision: d, comments: comments || undefined }), `Review: ${titleCase(d)}`)}
-            >
-              {titleCase(d)}
-            </Button>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (r.workflowState === 'JEWELLER_REVIEW') {
-    return (
-      <div className="border-t border-neutral-100 pt-4 space-y-3">
-        <p className="text-sm font-medium text-neutral-800">Create quotation</p>
-        {lines.map((l, i) => (
-          <div key={i} className="grid grid-cols-[1fr,70px,110px] gap-2">
-            <Input value={l.label} onChange={(e) => setLine(i, 'label', e.target.value)} placeholder="Line item" />
-            <Input type="number" value={l.quantity} onChange={(e) => setLine(i, 'quantity', e.target.value)} />
-            <Input type="number" value={l.unitPrice} onChange={(e) => setLine(i, 'unitPrice', e.target.value)} placeholder="$ each" />
-          </div>
-        ))}
-        <div className="flex items-center gap-3">
-          <button type="button" className="text-xs text-gold-700" onClick={() => setLines((ls) => [...ls, { label: '', quantity: 1, unitPrice: '' }])}>
-            + line
-          </button>
-          <Input type="number" value={tax} onChange={(e) => setTax(e.target.value)} placeholder="tax rate e.g. 0.05" className="h-8 w-40" />
-        </div>
-        <Button
-          size="sm"
-          className="bg-neutral-900 hover:bg-neutral-800 text-white"
-          onClick={() =>
-            act(
-              () =>
-                api.designRequests.createQuotation(r.id, {
-                  lineItems: lines
-                    .filter((l) => l.label && l.unitPrice)
-                    .map((l) => ({ label: l.label, quantity: Number(l.quantity) || 1, unitPrice: Number(l.unitPrice) })),
-                  taxRate: tax ? Number(tax) : undefined,
-                }),
-              'Quotation sent to the customer.',
-            )
-          }
-        >
-          <Check className="w-4 h-4 mr-1.5" /> Send quotation
-        </Button>
-      </div>
-    );
-  }
-
-  if (r.workflowState === 'APPOINTMENT_SCHEDULED') {
-    return (
-      <div className="border-t border-neutral-100 pt-4">
-        <Button
-          size="sm"
-          className="bg-gold-500 hover:bg-gold-400 text-neutral-900"
-          onClick={() => act(() => api.designRequests.completeHandover(r.id, { handoverVerifiedBy: 'studio' }), 'Handover completed.')}
-        >
-          Complete handover
-        </Button>
-        <p className="text-xs text-neutral-400 mt-2">
-          Requires the order to be <em>ready_for_handover</em> — advance it in the Orders tab first.
-        </p>
-      </div>
-    );
-  }
-
-  return null;
-}
-
-/* ── Designs ──────────────────────────────────────────────────────────────── */
-const CATEGORY_CODES = ['NOSE_JEWELLERY', 'RING', 'EARRING', 'NECK_CHAIN', 'NECKLACE', 'HARAM', 'JEWELLERY_SET'];
-const emptyDesign = {
-  title: '', category: 'ring', categoryCode: 'RING', description: '', imageUrl: '', materials: '',
-  basePrice: '', customizableParts: '', styles: '', occasions: '', suitableFaceShapes: '',
-  suitableNoseSizes: '', suitableEarSizes: '', suitableNeckLengths: '',
+const TABS = ['Overview', 'Products', 'Inventory', 'Appointments', 'Orders', 'Shop profile'];
+const ORDER_NEXT = {
+  PENDING: ['CONFIRMED', 'CANCELLED'],
+  CONFIRMED: ['PROCESSING', 'CANCELLED'],
+  PROCESSING: ['READY', 'CANCELLED'],
+  READY: ['SHIPPED', 'CANCELLED'],
+  SHIPPED: ['DELIVERED'],
+  DELIVERED: [],
+  CANCELLED: [],
 };
-const csv = (s) => s.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
-const csvStyles = (s) => s.split(',').map((x) => x.trim()).filter(Boolean);
 
-function DesignsTab() {
-  const { rows, loading, reload } = useList(() => api.designs.list({ all: 1, pageSize: 100, sort: '-createdAt' }));
-  const [form, setForm] = useState(emptyDesign);
-  const [saving, setSaving] = useState(false);
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+function err(e) {
+  alert(e?.message || 'Something went wrong');
+}
 
-  const create = async (e) => {
-    e.preventDefault();
-    if (!form.title || !form.basePrice) return toast.error('Title and base price are required.');
-    setSaving(true);
-    try {
-      await api.designs.create({
-        title: form.title,
-        category: form.category,
-        categoryCode: form.categoryCode,
-        description: form.description || undefined,
-        imageUrl: form.imageUrl || undefined,
-        materials: form.materials || undefined,
-        basePrice: Number(form.basePrice),
-        customizableParts: form.customizableParts || undefined,
-        isPublished: true,
-        styles: csvStyles(form.styles),
-        occasions: csvStyles(form.occasions),
-        suitableFaceShapes: csv(form.suitableFaceShapes),
-        suitableNoseSizes: csv(form.suitableNoseSizes),
-        suitableEarSizes: csv(form.suitableEarSizes),
-        suitableNeckLengths: csv(form.suitableNeckLengths),
-      });
-      setForm(emptyDesign);
-      toast('Design published.');
-      reload();
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setSaving(false);
+// ── Products tab ────────────────────────────────────────────────────────────
+function ProductsTab() {
+  const [products, setProducts] = useState([]);
+  const [cats, setCats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null); // product or {} for new
+  const [folderImages, setFolderImages] = useState([]);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    Promise.all([api.catalog.list({ mine: 'true', all: '1', pageSize: 100 }), api.catalog.categories({ all: '1' })])
+      .then(([p, c]) => {
+        setProducts(p.data || []);
+        setCats(c.data || []);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+  useEffect(load, [load]);
+
+  const openEditor = async (p) => {
+    setEditing(p);
+    const catId = p?.categoryId || cats[0]?.id;
+    if (catId) {
+      try {
+        const r = await api.catalog.categoryImages(catId);
+        setFolderImages(r.data.images || []);
+      } catch {
+        setFolderImages([]);
+      }
     }
   };
 
-  return (
-    <div className="grid lg:grid-cols-2 gap-8">
-      <form onSubmit={create} className="bg-white rounded-2xl border border-neutral-200 p-6 space-y-4 h-fit">
-        <h2 className="font-display text-2xl text-neutral-900 flex items-center gap-2">
-          <Plus className="w-5 h-5" /> New design
-        </h2>
-        <Field label="Title"><Input value={form.title} onChange={set('title')} /></Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Catalogue category">
-            <select value={form.category} onChange={set('category')} className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-sm">
-              {categories.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Recommendation category">
-            <select value={form.categoryCode} onChange={set('categoryCode')} className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-sm">
-              {CATEGORY_CODES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </Field>
-        </div>
-        <Field label="Base price ($)"><Input type="number" value={form.basePrice} onChange={set('basePrice')} /></Field>
-        <Field label="Image URL"><Input value={form.imageUrl} onChange={set('imageUrl')} placeholder="https://…" /></Field>
-        <Field label="Materials"><Input value={form.materials} onChange={set('materials')} /></Field>
-        <Field label="Description"><Textarea rows={2} value={form.description} onChange={set('description')} /></Field>
-        <Field label="Customizable parts"><Input value={form.customizableParts} onChange={set('customizableParts')} /></Field>
-        <p className="text-xs text-neutral-400 pt-1">Recommendation matching (comma-separated; blank = matches everyone)</p>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Styles"><Input value={form.styles} onChange={set('styles')} placeholder="Traditional, Bridal" /></Field>
-          <Field label="Occasions"><Input value={form.occasions} onChange={set('occasions')} placeholder="Wedding, Festive" /></Field>
-          <Field label="Face shapes"><Input value={form.suitableFaceShapes} onChange={set('suitableFaceShapes')} placeholder="OVAL, HEART" /></Field>
-          <Field label="Nose sizes"><Input value={form.suitableNoseSizes} onChange={set('suitableNoseSizes')} placeholder="SMALL, MEDIUM" /></Field>
-          <Field label="Ear sizes"><Input value={form.suitableEarSizes} onChange={set('suitableEarSizes')} placeholder="SMALL, MEDIUM" /></Field>
-          <Field label="Neck lengths"><Input value={form.suitableNeckLengths} onChange={set('suitableNeckLengths')} placeholder="MEDIUM, LONG" /></Field>
-        </div>
-        <Button type="submit" disabled={saving} className="w-full bg-gold-500 hover:bg-gold-400 text-neutral-900">
-          {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-          Publish design
-        </Button>
-        <BulkImport onDone={reload} />
-      </form>
-
-      <div className="grid sm:grid-cols-2 gap-5 content-start">
-        {loading ? (
-          <PageLoader />
-        ) : rows.length === 0 ? (
-          <Empty>No designs yet.</Empty>
-        ) : (
-          rows.map((d) => (
-            <div key={d.id} className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
-              <div className="aspect-[4/3] bg-neutral-100">
-                {d.imageUrl ? <Image src={d.imageUrl} alt={d.title} className="w-full h-full" fittingType="fill" /> : null}
-              </div>
-              <div className="p-4">
-                <h3 className="font-display text-xl text-neutral-900">{d.title}</h3>
-                <p className="text-sm text-neutral-500">{formatMoney(d.basePrice)}</p>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ── Components ───────────────────────────────────────────────────────────── */
-function ComponentsTab() {
-  const { rows, loading, reload } = useList(() => api.components.list({ pageSize: 100 }));
-  const [form, setForm] = useState({ name: '', type: '', priceModifier: '' });
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const create = async (e) => {
-    e.preventDefault();
-    if (!form.name || !form.type) return toast.error('Name and type required.');
+  const save = async (form) => {
     try {
-      await api.components.create({ ...form, priceModifier: Number(form.priceModifier || 0) });
-      setForm({ name: '', type: '', priceModifier: '' });
-      toast('Component added.');
-      reload();
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
-  return (
-    <div className="grid lg:grid-cols-2 gap-8">
-      <form onSubmit={create} className="bg-white rounded-2xl border border-neutral-200 p-6 space-y-4 h-fit">
-        <h2 className="font-display text-2xl text-neutral-900">New component</h2>
-        <Field label="Name"><Input value={form.name} onChange={set('name')} /></Field>
-        <Field label="Type"><Input value={form.type} onChange={set('type')} placeholder="stone / band / finish" /></Field>
-        <Field label="Price modifier ($)"><Input type="number" value={form.priceModifier} onChange={set('priceModifier')} /></Field>
-        <Button type="submit" className="w-full bg-gold-500 hover:bg-gold-400 text-neutral-900">Add component</Button>
-      </form>
-      <div className="bg-white rounded-2xl border border-neutral-200 p-2">
-        {loading ? (
-          <PageLoader />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead className="text-right">+ $</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell>{c.name}</TableCell>
-                  <TableCell className="text-neutral-500">{c.type}</TableCell>
-                  <TableCell className="text-right">{formatMoney(c.priceModifier)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ── Validations ─────────────────────────────────────────────────────────── */
-function ValidationsTab() {
-  const { rows, loading, reload } = useList(() => api.aiDesigns.list({ pageSize: 50, sort: '-createdAt' }));
-  const validate = async (aiResultId, conceptIndex, verdict) => {
-    try {
-      await api.designValidations.create({ aiResultId, conceptIndex, verdict });
-      toast(`Concept marked ${verdict}.`);
-      reload();
+      if (editing.id) await api.catalog.update(editing.id, form);
+      else await api.catalog.create(form);
+      setEditing(null);
+      load();
     } catch (e) {
-      toast.error(e.message);
+      err(e);
     }
   };
+  const remove = async (id) => {
+    if (!confirm('Delete this product?')) return;
+    try {
+      await api.catalog.remove(id);
+      load();
+    } catch (e) {
+      err(e);
+    }
+  };
+
   if (loading) return <PageLoader />;
-  const withResults = rows.filter((r) => r.result?.concepts?.length);
-  if (!withResults.length) return <Empty>No AI concept sets awaiting validation.</Empty>;
+
   return (
-    <div className="space-y-5">
-      {withResults.map((r) => (
-        <div key={r.id} className="bg-white rounded-2xl border border-neutral-200 p-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-display text-xl text-neutral-900">{r.inputs?.design_title || 'AI request'}</h3>
-            <span className="text-xs text-neutral-400">{r.customer?.email} · {formatDate(r.createdAt)}</span>
-          </div>
-          <div className="space-y-3">
-            {r.result.concepts.map((c, i) => (
-              <div key={i} className="border border-neutral-100 rounded-xl p-4">
-                <div className="flex items-center justify-between">
-                  <p className="font-medium text-neutral-800">{c.name}</p>
-                  <span className="text-xs text-neutral-500">AI: {c.feasibility}</span>
+    <div>
+      <div className="flex justify-between items-center mb-4">
+        <p className="text-sm text-neutral-500">{products.length} products</p>
+        <button
+          onClick={() => openEditor({})}
+          className="rounded-full bg-neutral-900 text-white px-4 py-2 text-sm"
+        >
+          Add product
+        </button>
+      </div>
+
+      <Table
+        empty="No products yet — add your first piece."
+        columns={[
+          {
+            key: 'name',
+            label: 'Product',
+            render: (p) => (
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg overflow-hidden bg-neutral-100 shrink-0">
+                  {p.primaryImage && <img src={assetUrl(p.primaryImage.url)} alt="" className="w-full h-full object-cover" />}
                 </div>
-                <p className="text-sm text-neutral-600 mt-1">{c.description}</p>
-                <div className="flex gap-2 mt-3">
-                  <Button size="sm" onClick={() => validate(r.result.id, i, 'APPROVED')} className="bg-emerald-600 hover:bg-emerald-500">
-                    Approve
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => validate(r.result.id, i, 'NEEDS_MODIFICATION')} className="border-amber-300 text-amber-700">
-                    Needs mod
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => validate(r.result.id, i, 'REJECTED')} className="border-rose-300 text-rose-700">
-                    Reject
-                  </Button>
+                <div>
+                  <p className="text-neutral-900">{p.name}</p>
+                  <p className="text-xs text-neutral-400">{p.category?.name}</p>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
+            ),
+          },
+          { key: 'price', label: 'Price', render: (p) => formatMoney(p.price, p.currency) },
+          { key: 'stock', label: 'Stock', render: (p) => p.stock },
+          { key: 'availability', label: 'Availability', render: (p) => <StatusBadge status={p.availability} /> },
+          { key: 'isPublished', label: 'Live', render: (p) => (p.isPublished ? 'Yes' : 'Draft') },
+          {
+            key: 'act',
+            label: '',
+            render: (p) => (
+              <div className="flex gap-3 text-sm">
+                <button onClick={() => openEditor(p)} className="text-gold-700">Edit</button>
+                <button onClick={() => remove(p.id)} className="text-neutral-400 hover:text-destructive">Delete</button>
+              </div>
+            ),
+          },
+        ]}
+        rows={products}
+      />
 
-/* ── Orders / production / QC / delivery ─────────────────────────────────── */
-function OrdersTab() {
-  const { rows, loading, reload } = useList(() => api.orders.list({ pageSize: 100, sort: '-createdAt' }));
-  const act = async (fn, label) => {
-    try {
-      await fn();
-      toast(label);
-      reload();
-    } catch (e) {
-      toast.error(e.message);
-    }
-  };
-  if (loading) return <PageLoader />;
-  if (!rows.length) return <Empty>No orders yet.</Empty>;
-  return (
-    <div className="space-y-4">
-      {rows.map((o) => (
-        <div key={o.id} className="bg-white rounded-2xl border border-neutral-200 p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="font-mono text-xs text-neutral-400">#{o.id.slice(-8)} · {o.customer?.email}</p>
-              <p className="font-display text-xl text-neutral-900 mt-1">{formatMoney(o.total, o.currency)}</p>
-            </div>
-            <StatusBadge status={o.status} />
-          </div>
-          <div className="flex flex-wrap gap-2 mt-4">
-            {(o.payments || []).some((p) => p.status === 'pending') && (
-              <Button size="sm" onClick={() => act(() => api.payments.confirm(o.payments.find((p) => p.status === 'pending').id), 'Payment confirmed.')}>
-                Confirm payment
-              </Button>
-            )}
-            {o.status === 'paid' && (
-              <Button size="sm" variant="outline" onClick={() => act(() => api.orders.updateProduction(o.id, { stage: 'casting' }), 'Production started.')}>
-                Start production
-              </Button>
-            )}
-            {o.status === 'in_production' && (
-              <Button size="sm" variant="outline" onClick={() => act(() => api.orders.setStatus(o.id, 'quality_check'), 'Moved to QC.')}>
-                Send to QC
-              </Button>
-            )}
-            {o.status === 'quality_check' && (
-              <Button size="sm" onClick={() => act(() => api.qualityChecks.create({ orderId: o.id, passed: true }), 'QC passed.')}>
-                Pass QC
-              </Button>
-            )}
-            {o.status === 'ready_for_handover' && (
-              <Button
-                size="sm"
-                className="bg-gold-500 hover:bg-gold-400 text-neutral-900"
-                onClick={() =>
-                  act(
-                    () => api.orders.updateDelivery(o.id, { method: 'in_person_handover', status: 'handed_over', handoverVerifiedBy: 'studio' }),
-                    'Handover completed.',
-                  )
-                }
-              >
-                Complete handover
-              </Button>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ── Inventory ───────────────────────────────────────────────────────────── */
-function InventoryTab() {
-  const { rows, loading, reload } = useList(() => api.inventory.list({ pageSize: 100 }));
-  const [form, setForm] = useState({ sku: '', name: '', quantity: '', unitCost: '' });
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const create = async (e) => {
-    e.preventDefault();
-    if (!form.sku || !form.name) return toast.error('SKU and name required.');
-    try {
-      await api.inventory.create({
-        sku: form.sku,
-        name: form.name,
-        quantity: Number(form.quantity || 0),
-        unitCost: Number(form.unitCost || 0),
-      });
-      setForm({ sku: '', name: '', quantity: '', unitCost: '' });
-      toast('Item added.');
-      reload();
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
-  return (
-    <div className="grid lg:grid-cols-2 gap-8">
-      <form onSubmit={create} className="bg-white rounded-2xl border border-neutral-200 p-6 space-y-4 h-fit">
-        <h2 className="font-display text-2xl text-neutral-900">New inventory item</h2>
-        <Field label="SKU"><Input value={form.sku} onChange={set('sku')} /></Field>
-        <Field label="Name"><Input value={form.name} onChange={set('name')} /></Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Quantity"><Input type="number" value={form.quantity} onChange={set('quantity')} /></Field>
-          <Field label="Unit cost ($)"><Input type="number" value={form.unitCost} onChange={set('unitCost')} /></Field>
-        </div>
-        <Button type="submit" className="w-full bg-gold-500 hover:bg-gold-400 text-neutral-900">Add item</Button>
-      </form>
-      <div className="bg-white rounded-2xl border border-neutral-200 p-2">
-        {loading ? (
-          <PageLoader />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>SKU</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((it) => (
-                <TableRow key={it.id}>
-                  <TableCell className="font-mono text-xs">{it.sku}</TableCell>
-                  <TableCell>{it.name}</TableCell>
-                  <TableCell className={`text-right ${it.quantity <= it.reorderLevel ? 'text-rose-600' : ''}`}>
-                    {it.quantity}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function BulkImport({ onDone }) {
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const run = async () => {
-    let items;
-    try {
-      const parsed = JSON.parse(text);
-      items = Array.isArray(parsed) ? parsed : parsed.items;
-      if (!Array.isArray(items) || !items.length) throw new Error('empty');
-    } catch {
-      return toast.error('Paste a JSON array of design records (or { "items": [...] }).');
-    }
-    setBusy(true);
-    try {
-      const { data } = await api.designs.import(items);
-      toast(`Import: ${data.created} created, ${data.updated} updated, ${data.skipped} skipped.`);
-      if (data.errors?.length) toast.error(`${data.errors.length} row error(s) — see console.`);
-      if (data.errors?.length) console.warn('catalog import errors', data.errors);
-      setText('');
-      onDone?.();
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="border-t border-neutral-100 pt-3">
-      <button type="button" className="text-xs text-gold-700" onClick={() => setOpen((v) => !v)}>
-        {open ? '− ' : '+ '}Bulk import (JSON) — for large catalogues use `npm run catalog:import`
-      </button>
-      {open && (
-        <div className="mt-2 space-y-2">
-          <Textarea
-            rows={5}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder='[{"externalId":"SKU-1","title":"Halo Ring","categoryCode":"RING","basePrice":2400,"styles":["Bridal"]}]'
-            className="font-mono text-xs"
-          />
-          <Button type="button" size="sm" disabled={busy} onClick={run} variant="outline">
-            {busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null} Import batch (≤ 500)
-          </Button>
-          <p className="text-[11px] text-neutral-400">
-            Idempotent by <code>externalId</code>. Missing images stay empty — fill with{' '}
-            <code>catalog:generate-images</code> (needs a local image model) or upload per design.
-          </p>
-        </div>
+      {editing && (
+        <ProductEditor
+          product={editing}
+          categories={cats}
+          folderImages={folderImages}
+          onCategoryChange={async (catId) => {
+            try {
+              const r = await api.catalog.categoryImages(catId);
+              setFolderImages(r.data.images || []);
+            } catch {
+              setFolderImages([]);
+            }
+          }}
+          onCancel={() => setEditing(null)}
+          onSave={save}
+        />
       )}
     </div>
   );
 }
 
-/* ── Materials (configurable catalogue for recommendations + raw estimates) ── */
-function MaterialsTab() {
-  const { rows, loading, reload } = useList(() => api.materials.list({ pageSize: 100 }));
-  const [form, setForm] = useState({ code: '', name: '', type: 'metal', priceMultiplier: '1.0', addOnPrice: '0' });
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const create = async (e) => {
-    e.preventDefault();
-    if (!form.code || !form.name) return toast.error('Code and name required.');
-    try {
-      await api.materials.create({
-        code: form.code,
-        name: form.name,
-        type: form.type,
-        priceMultiplier: Number(form.priceMultiplier) || 1,
-        addOnPrice: Number(form.addOnPrice) || 0,
-      });
-      setForm({ code: '', name: '', type: 'metal', priceMultiplier: '1.0', addOnPrice: '0' });
-      toast('Material added.');
-      reload();
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
+function ProductEditor({ product, categories, folderImages, onCategoryChange, onCancel, onSave }) {
+  const isNew = !product.id;
+  const [f, setF] = useState({
+    name: product.name || '',
+    categoryId: product.categoryId || categories[0]?.id || '',
+    price: product.price ?? '',
+    stock: product.stock ?? 0,
+    metal: product.metal || '',
+    purity: product.purity || '',
+    weightGrams: product.weightGrams ?? '',
+    stone: product.stone || '',
+    description: product.description || '',
+    availability: product.availability || 'IN_STOCK',
+    isPublished: product.isPublished ?? true,
+    images: (product.imageUrls || []).map((i) => i.path),
+  });
+  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+  const toggleImg = (path) =>
+    setF((s) => ({
+      ...s,
+      images: s.images.includes(path) ? s.images.filter((p) => p !== path) : [...s.images, path].slice(0, 6),
+    }));
+
   return (
-    <div className="grid lg:grid-cols-2 gap-8">
-      <form onSubmit={create} className="bg-white rounded-2xl border border-neutral-200 p-6 space-y-4 h-fit">
-        <h2 className="font-display text-2xl text-neutral-900">New material / stone</h2>
-        <Field label="Code"><Input value={form.code} onChange={set('code')} placeholder="18K_ROSE_GOLD" /></Field>
-        <Field label="Name"><Input value={form.name} onChange={set('name')} /></Field>
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="Type">
-            <select value={form.type} onChange={set('type')} className="w-full h-9 rounded-md border border-neutral-200 px-2 text-sm">
-              {['metal', 'stone', 'other'].map((t) => <option key={t}>{t}</option>)}
-            </select>
-          </Field>
-          <Field label="× multiplier"><Input type="number" step="0.01" value={form.priceMultiplier} onChange={set('priceMultiplier')} /></Field>
-          <Field label="+ add-on"><Input type="number" value={form.addOnPrice} onChange={set('addOnPrice')} /></Field>
-        </div>
-        <Button type="submit" className="w-full bg-gold-500 hover:bg-gold-400 text-neutral-900">Add material</Button>
-        <p className="text-xs text-neutral-400">
-          Used by material suggestions and raw price estimates. Estimates are never final quotations.
-        </p>
-      </form>
-      <div className="bg-white rounded-2xl border border-neutral-200 p-2">
-        {loading ? <PageLoader /> : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Code</TableHead><TableHead>Type</TableHead><TableHead className="text-right">×</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((m) => (
-                <TableRow key={m.id}>
-                  <TableCell className="font-mono text-xs">{m.code}</TableCell>
-                  <TableCell className="text-neutral-500">{m.type}</TableCell>
-                  <TableCell className="text-right">{m.priceMultiplier}</TableCell>
-                </TableRow>
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4">
+      <div className="bg-white rounded-2xl max-w-2xl w-full my-8 p-6">
+        <h3 className="font-display text-2xl text-neutral-900 mb-4">{isNew ? 'Add product' : 'Edit product'}</h3>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <L label="Name"><input value={f.name} onChange={set('name')} className={inp} /></L>
+          <L label="Category">
+            <select
+              value={f.categoryId}
+              onChange={(e) => {
+                set('categoryId')(e);
+                setF((s) => ({ ...s, images: [] }));
+                onCategoryChange(e.target.value);
+              }}
+              className={inp}
+            >
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
-            </TableBody>
-          </Table>
-        )}
+            </select>
+          </L>
+          <L label="Price (₹)"><input type="number" value={f.price} onChange={set('price')} className={inp} /></L>
+          <L label="Stock"><input type="number" value={f.stock} onChange={set('stock')} className={inp} /></L>
+          <L label="Metal"><input value={f.metal} onChange={set('metal')} className={inp} /></L>
+          <L label="Purity"><input value={f.purity} onChange={set('purity')} className={inp} /></L>
+          <L label="Weight (g)"><input type="number" step="0.1" value={f.weightGrams} onChange={set('weightGrams')} className={inp} /></L>
+          <L label="Stone"><input value={f.stone} onChange={set('stone')} className={inp} /></L>
+          <L label="Availability">
+            <select value={f.availability} onChange={set('availability')} className={inp}>
+              <option value="IN_STOCK">In stock</option>
+              <option value="MADE_TO_ORDER">Made to order</option>
+              <option value="UNAVAILABLE">Unavailable</option>
+            </select>
+          </L>
+          <label className="flex items-center gap-2 text-sm mt-6">
+            <input type="checkbox" checked={f.isPublished} onChange={set('isPublished')} /> Published
+          </label>
+        </div>
+        <L label="Description" className="mt-3">
+          <textarea value={f.description} onChange={set('description')} rows={2} className={inp} />
+        </L>
+
+        <p className="text-xs uppercase tracking-wide text-neutral-500 mt-4 mb-2">
+          Images — from this category&apos;s folder only ({f.images.length} selected)
+        </p>
+        <div className="grid grid-cols-6 gap-2 max-h-52 overflow-y-auto">
+          {folderImages.map((img) => (
+            <button
+              key={img.path}
+              type="button"
+              onClick={() => toggleImg(img.path)}
+              className={`aspect-square rounded-lg overflow-hidden border-2 ${
+                f.images.includes(img.path) ? 'border-neutral-900' : 'border-transparent'
+              }`}
+            >
+              <img src={assetUrl(img.url)} alt="" className="w-full h-full object-cover" />
+            </button>
+          ))}
+          {folderImages.length === 0 && (
+            <p className="col-span-6 text-sm text-neutral-400 py-4">No images in this category&apos;s folder.</p>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 mt-6">
+          <button onClick={onCancel} className="px-4 py-2 text-sm text-neutral-500">Cancel</button>
+          <button
+            onClick={() =>
+              onSave({
+                name: f.name,
+                categoryId: f.categoryId,
+                price: Number(f.price),
+                stock: Number(f.stock),
+                metal: f.metal || undefined,
+                purity: f.purity || undefined,
+                weightGrams: f.weightGrams === '' ? undefined : Number(f.weightGrams),
+                stone: f.stone || undefined,
+                description: f.description || undefined,
+                availability: f.availability,
+                isPublished: f.isPublished,
+                images: f.images.map((path) => ({ path })),
+              })
+            }
+            className="rounded-full bg-neutral-900 text-white px-5 py-2 text-sm"
+          >
+            {isNew ? 'Create' : 'Save'}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ── small shared bits ──────────────────────────────────────────────────── */
-function Field({ label, children }) {
+const inp = 'w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm';
+function L({ label, children, className = '' }) {
   return (
-    <div>
-      <Label className="mb-1.5 block">{label}</Label>
+    <label className={`block ${className}`}>
+      <span className="block text-xs uppercase tracking-wide text-neutral-500 mb-1">{label}</span>
       {children}
+    </label>
+  );
+}
+
+// ── Inventory tab ──────────────────────────────────────────────────────────
+function InventoryTab() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(() => {
+    setLoading(true);
+    api.inventory.list({ pageSize: 100 }).then((r) => setRows(r.data || [])).finally(() => setLoading(false));
+  }, []);
+  useEffect(load, [load]);
+  const adjust = async (row, delta) => {
+    try {
+      await api.inventory.update(row.id, { quantity: Math.max(0, row.quantity + delta) });
+      load();
+    } catch (e) {
+      err(e);
+    }
+  };
+  if (loading) return <PageLoader />;
+  return (
+    <Table
+      empty="No inventory items."
+      rows={rows}
+      columns={[
+        { key: 'sku', label: 'SKU' },
+        { key: 'name', label: 'Item' },
+        { key: 'material', label: 'Material' },
+        {
+          key: 'quantity',
+          label: 'Qty',
+          render: (r) => (
+            <span className="inline-flex items-center gap-2">
+              <button onClick={() => adjust(r, -1)} className="text-neutral-400">−</button>
+              <span className={r.quantity <= r.reorderLevel ? 'text-destructive font-medium' : ''}>{r.quantity}</span>
+              <button onClick={() => adjust(r, 1)} className="text-neutral-400">+</button>
+            </span>
+          ),
+        },
+        { key: 'reorderLevel', label: 'Reorder at' },
+      ]}
+    />
+  );
+}
+
+// ── Appointments tab ──────────────────────────────────────────────────────
+function AppointmentsTab() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(() => {
+    setLoading(true);
+    api.appointments.list({ sort: '-date', pageSize: 100 }).then((r) => setRows(r.data || [])).finally(() => setLoading(false));
+  }, []);
+  useEffect(load, [load]);
+  const setStatus = async (id, status) => {
+    try {
+      await api.appointments.update(id, { status });
+      load();
+    } catch (e) {
+      err(e);
+    }
+  };
+  if (loading) return <PageLoader />;
+  return (
+    <Table
+      empty="No appointment requests."
+      rows={rows}
+      columns={[
+        { key: 'date', label: 'When', render: (a) => `${formatDate(a.date)} · ${a.timeSlot}` },
+        { key: 'customerName', label: 'Customer', render: (a) => `${a.customerName} · ${a.customerPhone}` },
+        { key: 'serviceType', label: 'Service', render: (a) => a.serviceType[0] + a.serviceType.slice(1).toLowerCase() },
+        { key: 'status', label: 'Status', render: (a) => <StatusBadge status={a.status} /> },
+        {
+          key: 'act',
+          label: '',
+          render: (a) => (
+            <div className="flex gap-2 text-sm">
+              {a.status === 'PENDING' && (
+                <>
+                  <button onClick={() => setStatus(a.id, 'CONFIRMED')} className="text-emerald-700">Accept</button>
+                  <button onClick={() => setStatus(a.id, 'REJECTED')} className="text-destructive">Reject</button>
+                </>
+              )}
+              {a.status === 'CONFIRMED' && (
+                <button onClick={() => setStatus(a.id, 'COMPLETED')} className="text-gold-700">Mark done</button>
+              )}
+            </div>
+          ),
+        },
+      ]}
+    />
+  );
+}
+
+// ── Orders tab ────────────────────────────────────────────────────────────
+function OrdersTab() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(() => {
+    setLoading(true);
+    api.orders.list({ sort: '-placedAt', pageSize: 100 }).then((r) => setRows(r.data || [])).finally(() => setLoading(false));
+  }, []);
+  useEffect(load, [load]);
+  const move = async (id, status) => {
+    try {
+      await api.orders.setStatus(id, status);
+      load();
+    } catch (e) {
+      err(e);
+    }
+  };
+  if (loading) return <PageLoader />;
+  return (
+    <Table
+      empty="No orders yet."
+      rows={rows}
+      columns={[
+        { key: 'id', label: 'Order', render: (o) => o.id.slice(-8).toUpperCase() },
+        { key: 'placedAt', label: 'Placed', render: (o) => formatDate(o.placedAt) },
+        { key: 'customer', label: 'Customer', render: (o) => o.customer?.fullName || o.contactName },
+        { key: 'total', label: 'Total', render: (o) => formatMoney(o.total, o.currency) },
+        { key: 'status', label: 'Status', render: (o) => <StatusBadge status={o.status} /> },
+        {
+          key: 'act',
+          label: 'Advance',
+          render: (o) => (
+            <div className="flex gap-2 text-sm">
+              {(ORDER_NEXT[o.status] || []).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => move(o.id, s)}
+                  className={s === 'CANCELLED' ? 'text-destructive' : 'text-gold-700'}
+                >
+                  {s[0] + s.slice(1).toLowerCase()}
+                </button>
+              ))}
+            </div>
+          ),
+        },
+      ]}
+    />
+  );
+}
+
+// ── Shop profile tab ──────────────────────────────────────────────────────
+function ShopProfileTab() {
+  const [shop, setShop] = useState(null);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    api.shops.mine().then((r) => setShop(r.data)).catch(() => setShop(false));
+  }, []);
+  if (shop === null) return <PageLoader />;
+  if (shop === false) return <p className="text-neutral-500">No shop profile found.</p>;
+  const set = (k) => (e) => setShop((s) => ({ ...s, [k]: e.target.value }));
+  const save = async () => {
+    try {
+      const { data } = await api.shops.updateMine({
+        shopName: shop.shopName,
+        description: shop.description || undefined,
+        addressLine1: shop.addressLine1 || undefined,
+        city: shop.city || undefined,
+        region: shop.region || undefined,
+        postalCode: shop.postalCode || undefined,
+        country: shop.country || undefined,
+        phone: shop.phone || undefined,
+        email: shop.email || '',
+      });
+      setShop(data);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      err(e);
+    }
+  };
+  return (
+    <div className="max-w-xl bg-white border border-neutral-200 rounded-2xl p-6 grid sm:grid-cols-2 gap-3">
+      <L label="Shop name"><input value={shop.shopName || ''} onChange={set('shopName')} className={inp} /></L>
+      <L label="Phone"><input value={shop.phone || ''} onChange={set('phone')} className={inp} /></L>
+      <L label="Email" className="sm:col-span-2"><input value={shop.email || ''} onChange={set('email')} className={inp} /></L>
+      <L label="Description" className="sm:col-span-2"><textarea value={shop.description || ''} onChange={set('description')} rows={2} className={inp} /></L>
+      <L label="Address"><input value={shop.addressLine1 || ''} onChange={set('addressLine1')} className={inp} /></L>
+      <L label="City"><input value={shop.city || ''} onChange={set('city')} className={inp} /></L>
+      <L label="Region"><input value={shop.region || ''} onChange={set('region')} className={inp} /></L>
+      <L label="Postal code"><input value={shop.postalCode || ''} onChange={set('postalCode')} className={inp} /></L>
+      <L label="Country"><input value={shop.country || ''} onChange={set('country')} className={inp} /></L>
+      <div className="sm:col-span-2 flex items-center gap-3 mt-2">
+        <button onClick={save} className="rounded-full bg-neutral-900 text-white px-5 py-2 text-sm">Save</button>
+        {saved && <span className="text-sm text-emerald-700">Saved</span>}
+      </div>
     </div>
   );
 }
-function Empty({ children }) {
+
+// ── Overview ──────────────────────────────────────────────────────────────
+function Overview() {
+  const [s, setS] = useState(null);
+  useEffect(() => {
+    Promise.all([
+      api.catalog.list({ mine: 'true', all: '1', pageSize: 1 }),
+      api.orders.list({ pageSize: 100 }),
+      api.appointments.list({ pageSize: 100 }),
+    ]).then(([p, o, a]) => {
+      const orders = o.data || [];
+      setS({
+        products: p.meta.total,
+        openOrders: orders.filter((x) => !['DELIVERED', 'CANCELLED'].includes(x.status)).length,
+        revenue: orders.filter((x) => x.status !== 'CANCELLED').reduce((t, x) => t + Number(x.total), 0),
+        pendingAppts: (a.data || []).filter((x) => x.status === 'PENDING').length,
+      });
+    });
+  }, []);
+  if (!s) return <PageLoader />;
   return (
-    <div className="text-center py-16 bg-white rounded-2xl border border-neutral-200 text-neutral-500 col-span-full">
-      {children}
+    <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <StatCard label="Products" value={s.products} />
+      <StatCard label="Open orders" value={s.openOrders} />
+      <StatCard label="Revenue" value={formatMoney(s.revenue)} />
+      <StatCard label="Appointment requests" value={s.pendingAppts} />
     </div>
+  );
+}
+
+export default function JewellerDashboard() {
+  const { user } = useAuth();
+  const [tab, setTab] = useState('Overview');
+  return (
+    <DashboardShell
+      title="Jeweller dashboard"
+      subtitle={user?.fullName || user?.email}
+      tabs={TABS}
+      active={tab}
+      onTab={setTab}
+    >
+      {tab === 'Overview' && <Overview />}
+      {tab === 'Products' && <ProductsTab />}
+      {tab === 'Inventory' && <InventoryTab />}
+      {tab === 'Appointments' && <AppointmentsTab />}
+      {tab === 'Orders' && <OrdersTab />}
+      {tab === 'Shop profile' && <ShopProfileTab />}
+    </DashboardShell>
   );
 }

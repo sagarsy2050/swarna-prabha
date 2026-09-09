@@ -3,7 +3,8 @@ import { shopService } from '../services/shop.service.js';
 
 export const shopController = {
   list: asyncHandler(async (req, res) => {
-    res.json(await shopService.list(req.query));
+    const includeInactive = req.user?.role === 'ADMIN' && req.query.all === '1';
+    res.json(await shopService.list(req.query, { includeInactive }));
   }),
   get: asyncHandler(async (req, res) => {
     res.json({ data: await shopService.getBySlug(req.params.slug) });

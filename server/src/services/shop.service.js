@@ -27,9 +27,9 @@ const LIST_SELECT = {
 };
 
 export const shopService = {
-  async list(query = {}) {
+  async list(query = {}, { includeInactive = false } = {}) {
     const { page, pageSize, skip, take } = parsePagination(query, { allowedSort: ['shopName', 'createdAt'] });
-    const where = { active: true };
+    const where = includeInactive ? {} : { active: true };
     if (query.q) {
       where.OR = [
         { shopName: { contains: query.q, mode: 'insensitive' } },
