@@ -1,6 +1,6 @@
 # Swarna Prabha
 
-A **deterministic, no-LLM jewellery marketplace**. Customers browse a
+A **deterministic**. Customers browse a
 category-classified catalogue, see only correctly-classified product images,
 discover jeweller shops, book appointments, and buy online. No AI, no chatbot,
 no image generation — every result comes from the database or the filesystem.
