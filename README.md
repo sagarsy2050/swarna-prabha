@@ -226,12 +226,6 @@ Two **separate** sign-ins:
 
 **Seed accounts** (`npm run db:seed`):
 
-| Role | Email | Password | Sign in at |
-|---|---|---|---|
-| Admin | `admin@swarnaprabha.local` | `admin12345` | `/staff/login` |
-| Jeweller | `jeweller@swarnaprabha.local` | `jeweller12345` | `/staff/login` |
-| Jeweller | `jeweller2@swarnaprabha.local` | `jeweller12345` | `/staff/login` |
-| Customer | `customer@swarnaprabha.local` | `customer12345` | `/login` |
 
 ---
 
