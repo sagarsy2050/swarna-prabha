@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Gem, Menu, X, LogOut, User } from 'lucide-react';
+import { Gem, Menu, X, LogOut, User, ShoppingBag } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
+import { useCart } from '@/lib/CartContext';
 
 const baseLinks = [
   { to: '/catalog', label: 'Jewellery' },
@@ -16,6 +17,7 @@ const adminLinks = [{ to: '/admin', label: 'Admin' }];
 
 export default function Navbar() {
   const { user, logout, hasRole } = useAuth();
+  const { cart } = useCart();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
@@ -29,9 +31,10 @@ export default function Navbar() {
 
   useEffect(() => setOpen(false), [location.pathname]);
 
+  const isCustomer = user?.role === 'CUSTOMER';
   const links = [
     ...baseLinks,
-    ...(user ? customerLinks : []),
+    ...(isCustomer ? customerLinks : []),
     ...(hasRole('JEWELLER', 'ADMIN') ? jewellerLinks : []),
     ...(hasRole('ADMIN') ? adminLinks : []),
   ];
@@ -42,6 +45,18 @@ export default function Navbar() {
     await logout();
     navigate('/');
   };
+
+  const CartLink = () =>
+    isCustomer ? (
+      <Link to="/cart" className="relative inline-flex items-center text-neutral-600 hover:text-neutral-900" aria-label="Cart">
+        <ShoppingBag className="w-5 h-5" />
+        {cart.itemCount > 0 && (
+          <span className="absolute -top-2 -right-2 bg-gold-600 text-white text-[10px] leading-none rounded-full min-w-4 h-4 px-1 flex items-center justify-center">
+            {cart.itemCount}
+          </span>
+        )}
+      </Link>
+    ) : null;
 
   return (
     <header
@@ -71,7 +86,8 @@ export default function Navbar() {
           ))}
         </div>
 
-        <div className="hidden md:flex items-center gap-3">
+        <div className="hidden md:flex items-center gap-4">
+          <CartLink />
           {user ? (
             <>
               <Link to="/profile" className="flex items-center gap-2 text-sm text-neutral-600 hover:text-neutral-900">
@@ -100,9 +116,12 @@ export default function Navbar() {
           )}
         </div>
 
-        <button className="md:hidden p-2 text-neutral-700" onClick={() => setOpen((v) => !v)} aria-label="Menu">
-          {open ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
+        <div className="md:hidden flex items-center gap-4">
+          <CartLink />
+          <button className="p-2 text-neutral-700" onClick={() => setOpen((v) => !v)} aria-label="Menu">
+            {open ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </div>
       </nav>
 
       {open && (
@@ -118,9 +137,12 @@ export default function Navbar() {
           ))}
           <div className="pt-3 border-t border-neutral-200 flex items-center gap-3">
             {user ? (
-              <button onClick={handleLogout} className="inline-flex items-center gap-1.5 text-sm text-neutral-600">
-                <LogOut className="w-4 h-4" /> Sign out
-              </button>
+              <>
+                <Link to="/profile" className="text-sm text-neutral-600">Profile</Link>
+                <button onClick={handleLogout} className="inline-flex items-center gap-1.5 text-sm text-neutral-600">
+                  <LogOut className="w-4 h-4" /> Sign out
+                </button>
+              </>
             ) : (
               <>
                 <Link to="/login" className="text-sm text-neutral-700">

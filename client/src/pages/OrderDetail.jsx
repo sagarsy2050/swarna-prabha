@@ -1,154 +1,107 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, CreditCard, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import StatusBadge from '@/components/StatusBadge';
-import { PageLoader, ErrorState } from '@/components/Loading';
-import { toast } from '@/components/ui/sonner';
+import { Link, useParams } from 'react-router-dom';
+import { ArrowLeft, Check } from 'lucide-react';
 import { api } from '@/api/client';
-import { formatMoney, formatDate, titleCase } from '@/lib/utils';
-import { useAuth } from '@/lib/AuthContext';
+import { PageLoader, ErrorState } from '@/components/Loading';
+import StatusBadge from '@/components/StatusBadge';
+import { assetUrl, formatMoney, formatDate } from '@/lib/utils';
 
-const STEPS = ['pending_payment', 'paid', 'in_production', 'quality_check', 'ready_for_handover', 'completed'];
+const FLOW = ['PENDING', 'CONFIRMED', 'PROCESSING', 'READY', 'SHIPPED', 'DELIVERED'];
 
 export default function OrderDetail() {
   const { id } = useParams();
-  const { user } = useAuth();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [paying, setPaying] = useState(false);
 
   const load = () => {
     setLoading(true);
     setError(null);
-    api.orders
-      .get(id)
-      .then((res) => setOrder(res.data))
-      .catch(setError)
-      .finally(() => setLoading(false));
+    api.orders.get(id).then((r) => setOrder(r.data)).catch(setError).finally(() => setLoading(false));
   };
   useEffect(load, [id]);
-
-  const pay = async () => {
-    setPaying(true);
-    try {
-      const { data } = await api.payments.initiate({ orderId: id });
-      toast(data.instructions || 'Payment initiated. A jeweller will confirm receipt.');
-      load();
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setPaying(false);
-    }
-  };
 
   if (loading) return <PageLoader />;
   if (error) return <ErrorState error={error} onRetry={load} />;
   if (!order) return null;
 
-  const stepIndex = STEPS.indexOf(order.status);
-  const outstanding =
-    Number(order.total) -
-    (order.payments || []).filter((p) => p.status === 'succeeded').reduce((s, p) => s + Number(p.amount), 0);
+  const cancelled = order.status === 'CANCELLED';
+  const stepIdx = FLOW.indexOf(order.status);
+  const addr = order.shippingAddress || {};
 
   return (
-    <div className="max-w-3xl mx-auto px-5 sm:px-8 py-10 sm:py-16">
-      <Link to="/my-orders" className="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 mb-6">
-        <ArrowLeft className="w-4 h-4" /> All orders
+    <div className="max-w-3xl mx-auto px-5 sm:px-8 py-12">
+      <Link to="/my-orders" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-900 mb-8">
+        <ArrowLeft className="w-4 h-4" /> My orders
       </Link>
 
-      <div className="flex items-start justify-between gap-3 mb-6">
+      <div className="flex items-center justify-between gap-3 mb-6">
         <div>
-          <p className="font-mono text-xs text-neutral-400">#{order.id.slice(-8)}</p>
-          <h1 className="font-display text-4xl text-neutral-900 mt-1">{formatMoney(order.total, order.currency)}</h1>
-          <p className="text-sm text-neutral-500">Placed {formatDate(order.createdAt)}</p>
+          <h1 className="font-display text-3xl text-neutral-900">Order {order.id.slice(-8).toUpperCase()}</h1>
+          <p className="text-sm text-neutral-400 mt-1">
+            {formatDate(order.placedAt)} · {order.shop?.name}
+          </p>
         </div>
         <StatusBadge status={order.status} />
       </div>
 
       {/* progress */}
-      <ol className="flex flex-wrap gap-2 mb-8">
-        {STEPS.map((s, i) => (
-          <li
-            key={s}
-            className={`text-xs px-3 py-1.5 rounded-full border ${
-              i <= stepIndex && order.status !== 'cancelled'
-                ? 'bg-neutral-900 text-white border-neutral-900'
-                : 'bg-white text-neutral-400 border-neutral-200'
-            }`}
-          >
-            {titleCase(s)}
-          </li>
-        ))}
-      </ol>
-
-      <div className="bg-white rounded-2xl border border-neutral-200 p-6 space-y-3">
-        <h2 className="font-display text-xl text-neutral-900">Items</h2>
-        <ul className="text-sm text-neutral-600 space-y-1">
-          {(order.items || []).map((li, i) => (
-            <li key={i} className="flex justify-between">
-              <span>
-                {li.label} × {li.quantity ?? 1}
-              </span>
-              <span>{formatMoney((li.quantity ?? 1) * (li.unitPrice ?? 0), order.currency)}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {order.status === 'pending_payment' && user?.role === 'CUSTOMER' && (
-        <div className="mt-6 bg-white rounded-2xl border border-neutral-200 p-6">
-          <h2 className="font-display text-xl text-neutral-900 mb-1">Payment</h2>
-          <p className="text-sm text-neutral-500 mb-4">
-            Outstanding: {formatMoney(outstanding, order.currency)}. This platform records the payment and a
-            jeweller confirms receipt — nothing is auto-charged.
-          </p>
-          <Button onClick={pay} disabled={paying} className="bg-gold-500 hover:bg-gold-400 text-neutral-900">
-            {paying ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CreditCard className="w-4 h-4 mr-2" />}
-            Initiate payment
-          </Button>
-        </div>
-      )}
-
-      {(order.payments || []).length > 0 && (
-        <div className="mt-6 bg-white rounded-2xl border border-neutral-200 p-6">
-          <h2 className="font-display text-xl text-neutral-900 mb-3">Payments</h2>
-          <ul className="text-sm space-y-2">
-            {order.payments.map((p) => (
-              <li key={p.id} className="flex justify-between items-center">
-                <span className="text-neutral-600">
-                  {formatMoney(p.amount, p.currency)} · {p.provider}
-                  {p.providerRef ? ` · ${p.providerRef}` : ''}
+      {!cancelled && (
+        <div className="bg-white border border-neutral-200 rounded-2xl p-5 mb-6">
+          <ol className="flex items-center justify-between">
+            {FLOW.map((s, i) => (
+              <li key={s} className="flex-1 flex flex-col items-center text-center">
+                <span
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${
+                    i <= stepIdx ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-400'
+                  }`}
+                >
+                  {i <= stepIdx ? <Check className="w-3.5 h-3.5" /> : i + 1}
                 </span>
-                <StatusBadge status={p.status} />
+                <span className={`mt-1.5 text-[10px] ${i <= stepIdx ? 'text-neutral-900' : 'text-neutral-400'}`}>
+                  {s[0] + s.slice(1).toLowerCase()}
+                </span>
               </li>
             ))}
-          </ul>
+          </ol>
         </div>
+      )}
+      {cancelled && (
+        <div className="bg-rose-50 text-rose-700 rounded-2xl p-4 mb-6 text-sm">This order was cancelled.</div>
       )}
 
-      {order.production && (
-        <div className="mt-6 bg-white rounded-2xl border border-neutral-200 p-6">
-          <h2 className="font-display text-xl text-neutral-900 mb-1">Production</h2>
-          <p className="text-sm text-neutral-600">
-            Stage: <StatusBadge status={order.production.stage} />
-          </p>
-          {order.production.notes && <p className="text-xs text-neutral-500 mt-2">{order.production.notes}</p>}
+      <div className="bg-white border border-neutral-200 rounded-2xl p-5 space-y-4">
+        {order.items.map((it) => (
+          <div key={it.id} className="flex gap-4">
+            <div className="w-16 h-16 rounded-lg overflow-hidden bg-neutral-100 shrink-0">
+              {it.imageUrl && <img src={assetUrl(it.imageUrl)} alt={it.nameSnapshot} className="w-full h-full object-cover" />}
+            </div>
+            <div className="flex-1 flex justify-between">
+              <div>
+                <p className="font-display text-lg text-neutral-900">{it.nameSnapshot}</p>
+                <p className="text-sm text-neutral-500">Qty {it.quantity} · {formatMoney(it.unitPrice, order.currency)} each</p>
+              </div>
+              <p className="font-display text-lg text-neutral-900">{formatMoney(it.lineTotal, order.currency)}</p>
+            </div>
+          </div>
+        ))}
+        <div className="border-t border-neutral-200 pt-3 flex justify-between font-display text-xl">
+          <span>Total</span>
+          <span>{formatMoney(order.total, order.currency)}</span>
         </div>
-      )}
+        <p className="text-xs text-neutral-400">
+          Payment: {order.payment?.status?.toLowerCase() || 'pending'} · settled directly with the jeweller.
+        </p>
+      </div>
 
-      {order.delivery && (
-        <div className="mt-6 bg-white rounded-2xl border border-neutral-200 p-6">
-          <h2 className="font-display text-xl text-neutral-900 mb-1">Delivery</h2>
-          <p className="text-sm text-neutral-600">
-            {titleCase(order.delivery.method)} · <StatusBadge status={order.delivery.status} />
-          </p>
-          {order.delivery.deliveredAt && (
-            <p className="text-xs text-neutral-500 mt-2">Handed over {formatDate(order.delivery.deliveredAt)}</p>
-          )}
-        </div>
-      )}
+      <div className="bg-white border border-neutral-200 rounded-2xl p-5 mt-4 text-sm">
+        <p className="font-medium text-neutral-900 mb-1">Delivery to</p>
+        <p className="text-neutral-600">
+          {order.contactName} · {order.contactPhone}
+          <br />
+          {[addr.line1, addr.line2, addr.city, addr.region, addr.postalCode, addr.country].filter(Boolean).join(', ')}
+        </p>
+      </div>
     </div>
   );
 }

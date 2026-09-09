@@ -9,6 +9,8 @@
 import { http } from './http.js';
 import { productsApi } from './products.js';
 import { appointmentsApi } from './appointments.js';
+import { shopsApi } from './shops.js';
+import { cartApi, ordersApi } from './orders.js';
 
 const crud = (base) => ({
   list: (query) => http.get(base, query),
@@ -39,6 +41,9 @@ const wired = {
 
   catalog: productsApi,
   products: productsApi,
+  shops: shopsApi,
+  cart: cartApi,
+  orders: ordersApi,
   appointments: appointmentsApi,
   inventory: crud('/api/inventory'),
 

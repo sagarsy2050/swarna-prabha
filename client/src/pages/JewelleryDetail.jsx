@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, ShoppingBag } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Calendar, ShoppingBag, Check } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader, ErrorState } from '@/components/Loading';
 import ProductImage from '@/components/jewellery/ProductImage';
+import { useAuth } from '@/lib/AuthContext';
+import { useCart } from '@/lib/CartContext';
 import { formatMoney } from '@/lib/utils';
 
 function Spec({ label, value }) {
@@ -18,10 +20,15 @@ function Spec({ label, value }) {
 
 export default function JewelleryDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { add } = useCart();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [active, setActive] = useState(0);
+  const [cartState, setCartState] = useState('idle'); // idle | adding | added | error
+  const [cartMsg, setCartMsg] = useState('');
 
   const load = () => {
     setLoading(true);
@@ -118,21 +125,48 @@ export default function JewelleryDetail() {
 
           <div className="mt-8 flex flex-wrap gap-3">
             <button
-              disabled={outOfStock}
+              disabled={outOfStock || cartState === 'adding'}
+              onClick={async () => {
+                if (!user) {
+                  navigate(`/login?returnTo=${encodeURIComponent(`/product/${product.id}`)}`);
+                  return;
+                }
+                if (user.role !== 'CUSTOMER') {
+                  setCartState('error');
+                  setCartMsg('Only customer accounts can shop.');
+                  return;
+                }
+                setCartState('adding');
+                try {
+                  await add(product.id, 1);
+                  setCartState('added');
+                  setCartMsg('');
+                } catch (e) {
+                  setCartState('error');
+                  setCartMsg(e.message || 'Could not add to cart');
+                }
+              }}
               className="inline-flex items-center gap-2 rounded-full bg-neutral-900 text-white px-6 py-3 text-sm hover:bg-neutral-800 disabled:opacity-40"
             >
-              <ShoppingBag className="w-4 h-4" /> Add to cart
+              {cartState === 'added' ? <Check className="w-4 h-4" /> : <ShoppingBag className="w-4 h-4" />}
+              {cartState === 'adding' ? 'Adding…' : cartState === 'added' ? 'Added to cart' : 'Add to cart'}
             </button>
+            {cartState === 'added' && (
+              <Link
+                to="/cart"
+                className="inline-flex items-center gap-2 rounded-full border border-neutral-300 px-6 py-3 text-sm hover:border-neutral-400"
+              >
+                View cart
+              </Link>
+            )}
             <Link
-              to={`/book?shop=${product.shop?.slug || ''}&product=${product.id}`}
+              to={`/book?shop=${product.shop?.slug || ''}${product.id ? `&product=${product.id}` : ''}`}
               className="inline-flex items-center gap-2 rounded-full border border-neutral-300 px-6 py-3 text-sm hover:border-neutral-400"
             >
               <Calendar className="w-4 h-4" /> Book an appointment
             </Link>
           </div>
-          <p className="mt-3 text-xs text-neutral-400">
-            Cart &amp; checkout arrive in the next update — appointment booking is live.
-          </p>
+          {cartMsg && <p className="mt-3 text-xs text-destructive">{cartMsg}</p>}
         </div>
       </div>
     </div>
