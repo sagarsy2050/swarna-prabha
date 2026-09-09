@@ -8,6 +8,22 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 const env = (k, d) => process.env[k] || d;
 
+// Seed-account passwords are NEVER hard-coded — set them in server/.env
+// (SEED_ADMIN_PASSWORD / SEED_JEWELLER_PASSWORD / SEED_CUSTOMER_PASSWORD).
+// server/.env.example ships placeholders so the standard `cp .env.example .env`
+// flow still produces a working login.
+function seedPassword(key) {
+  const v = process.env[key];
+  if (!v) {
+    console.error(
+      `\n${key} is not set. Set it in server/.env before running the seed ` +
+        `(server/.env.example has a placeholder). No default password is committed.\n`,
+    );
+    process.exit(1);
+  }
+  return v;
+}
+
 const IMAGES_ROOT = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'jewellery-images');
 const IMAGE_RE = /\.(jpe?g|png|webp)$/i;
 
@@ -67,7 +83,7 @@ const pick = (arr, n) => arr[n % arr.length];
 async function main() {
   const admin = await upsertUser({
     email: env('SEED_ADMIN_EMAIL', 'admin@swarnaprabha.local'),
-    password: env('SEED_ADMIN_PASSWORD', 'admin12345'),
+    password: seedPassword('SEED_ADMIN_PASSWORD'),
     role: 'ADMIN',
     fullName: 'Swarna Prabha Admin',
   });
@@ -75,7 +91,7 @@ async function main() {
   const jewellerDefs = [
     {
       email: env('SEED_JEWELLER_EMAIL', 'jeweller@swarnaprabha.local'),
-      password: env('SEED_JEWELLER_PASSWORD', 'jeweller12345'),
+      password: seedPassword('SEED_JEWELLER_PASSWORD'),
       fullName: 'Amara Sen',
       shop: {
         shopName: 'Amara Fine Jewellery',
@@ -94,7 +110,7 @@ async function main() {
     },
     {
       email: 'jeweller2@swarnaprabha.local',
-      password: env('SEED_JEWELLER_PASSWORD', 'jeweller12345'),
+      password: seedPassword('SEED_JEWELLER_PASSWORD'),
       fullName: 'Rohan Mehta',
       shop: {
         shopName: 'Mehta & Sons',
@@ -126,7 +142,7 @@ async function main() {
 
   const customer = await upsertUser({
     email: env('SEED_CUSTOMER_EMAIL', 'customer@swarnaprabha.local'),
-    password: env('SEED_CUSTOMER_PASSWORD', 'customer12345'),
+    password: seedPassword('SEED_CUSTOMER_PASSWORD'),
     role: 'CUSTOMER',
     fullName: 'Riya Kapoor',
   });

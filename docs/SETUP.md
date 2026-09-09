@@ -60,12 +60,17 @@ npm run dev
 
 ## Seed accounts
 
-| Role | Email | Password | Signs in at |
-| --- | --- | --- | --- |
-| Admin | `admin@swarnaprabha.local` | `admin12345` | `/staff/login` |
-| Jeweller | `jeweller@swarnaprabha.local` | `jeweller12345` | `/staff/login` |
-| Jeweller | `jeweller2@swarnaprabha.local` | `jeweller12345` | `/staff/login` |
-| Customer | `customer@swarnaprabha.local` | `customer12345` | `/login` |
+| Role | Email | Signs in at |
+| --- | --- | --- |
+| Admin | `admin@swarnaprabha.local` | `/staff/login` |
+| Jeweller | `jeweller@swarnaprabha.local` | `/staff/login` |
+| Jeweller | `jeweller2@swarnaprabha.local` | `/staff/login` |
+| Customer | `customer@swarnaprabha.local` | `/login` |
+
+The passwords are set by `SEED_ADMIN_PASSWORD`, `SEED_JEWELLER_PASSWORD` and
+`SEED_CUSTOMER_PASSWORD` in `server/.env` — set them before running
+`npm run db:seed`. `server/.env.example` ships placeholders; no real passwords
+are committed.
 
 Browsing the catalogue, searching and filtering need **no account**. A customer
 account is only needed to check out or book an appointment. Jeweller and admin

@@ -1,5 +1,22 @@
-// Full workflow audit against the running API (:4000). Prints PASS/FAIL per check.
-const API = 'http://localhost:4000';
+// Full workflow audit against the running API. Prints PASS/FAIL per check.
+//
+// Credentials come from the same env vars the seed uses — no passwords are
+// stored in this file. Run after `npm run db:seed`:
+//   SEED_ADMIN_PASSWORD=… SEED_JEWELLER_PASSWORD=… SEED_CUSTOMER_PASSWORD=… \
+//     node server/scripts/workflow-audit.mjs
+// (dotenv is loaded so server/.env is picked up automatically.)
+import 'dotenv/config';
+
+const API = process.env.AUDIT_API_URL || 'http://localhost:4000';
+const PW = {
+  admin: process.env.SEED_ADMIN_PASSWORD,
+  jeweller: process.env.SEED_JEWELLER_PASSWORD,
+  customer: process.env.SEED_CUSTOMER_PASSWORD,
+};
+if (!PW.admin || !PW.jeweller || !PW.customer) {
+  console.error('Set SEED_ADMIN_PASSWORD / SEED_JEWELLER_PASSWORD / SEED_CUSTOMER_PASSWORD (see server/.env).');
+  process.exit(1);
+}
 let pass = 0, fail = 0;
 const results = [];
 function check(name, ok, detail = '') {
@@ -21,14 +38,15 @@ const tok = async (email, pw) => (await j('POST', '/api/auth/login', { email, pa
 async function main() {
   // ---------- AUTH ----------
   const qaEmail = `qa_${Date.now()}@t.local`;
-  const reg = await j('POST', '/api/auth/register', { email: qaEmail, password: 'password123', fullName: 'QA User' });
+  const qaPw = `qa-${Math.random().toString(36).slice(2)}`;
+  const reg = await j('POST', '/api/auth/register', { email: qaEmail, password: qaPw, fullName: 'QA User' });
   check('AUTH register customer', reg.s === 201 && reg.d.data.user.role === 'CUSTOMER');
-  const badLogin = await j('POST', '/api/auth/login', { email: 'admin@swarnaprabha.local', password: 'wrong' });
+  const badLogin = await j('POST', '/api/auth/login', { email: 'admin@swarnaprabha.local', password: 'definitely-not-the-password' });
   check('AUTH wrong password -> 401', badLogin.s === 401);
-  const admin = await tok('admin@swarnaprabha.local', 'admin12345');
-  const jew = await tok('jeweller@swarnaprabha.local', 'jeweller12345');
-  const jew2 = await tok('jeweller2@swarnaprabha.local', 'jeweller12345');
-  const cust = await tok('customer@swarnaprabha.local', 'customer12345');
+  const admin = await tok('admin@swarnaprabha.local', PW.admin);
+  const jew = await tok('jeweller@swarnaprabha.local', PW.jeweller);
+  const jew2 = await tok('jeweller2@swarnaprabha.local', PW.jeweller);
+  const cust = await tok('customer@swarnaprabha.local', PW.customer);
   check('AUTH admin/jeweller/customer login', admin && jew && cust);
   const me = await j('GET', '/api/auth/me', null, cust);
   check('AUTH /me with token', me.s === 200 && me.d.data.email === 'customer@swarnaprabha.local');

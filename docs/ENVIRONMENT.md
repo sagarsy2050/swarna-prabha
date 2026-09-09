@@ -36,7 +36,8 @@ Copy `server/.env.example`. Fields:
 | `MAIL_DRIVER` | – | `console` | `console` (logs) \| `smtp` |
 | `MAIL_FROM` | – | `Swarna Prabha <no-reply@swarnaprabha.local>` | From header |
 | `SMTP_*` | if `smtp` | – | host / port / user / pass |
-| `SEED_ADMIN_EMAIL` … `SEED_CUSTOMER_PASSWORD` | – | `*@swarnaprabha.local` / `*12345` | used by `npm run db:seed` |
+| `SEED_ADMIN_EMAIL` … `SEED_CUSTOMER_EMAIL` | – | `*@swarnaprabha.local` | seed account emails |
+| `SEED_ADMIN_PASSWORD`, `SEED_JEWELLER_PASSWORD`, `SEED_CUSTOMER_PASSWORD` | **yes, for `db:seed`** | – | seed account passwords. No default is committed — `npm run db:seed` exits if these are unset. `server/.env.example` ships `change-me` placeholders. |
 
 There are **no AI / LLM / model / OCR / vision variables** — the application is
 deterministic and has no such dependencies.

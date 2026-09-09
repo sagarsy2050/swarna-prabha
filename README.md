@@ -1,6 +1,6 @@
 # Swarna Prabha
 
-A **deterministic**. Customers browse a
+A **deterministic, no-LLM jewellery marketplace**. Customers browse a
 category-classified catalogue, see only correctly-classified product images,
 discover jeweller shops, book appointments, and buy online. No AI, no chatbot,
 no image generation — every result comes from the database or the filesystem.
@@ -224,8 +224,14 @@ Two **separate** sign-ins:
 - Access token: short-lived, auto-refreshed silently. Refresh token: rotated,
   revocable, httpOnly cookie.
 
-**Seed accounts** (`npm run db:seed`):
-
+`npm run db:seed` creates one admin, two jewellers (each with a shop) and one
+customer. Their emails default to `admin@swarnaprabha.local`,
+`jeweller@swarnaprabha.local`, `jeweller2@swarnaprabha.local`,
+`customer@swarnaprabha.local`; their passwords come **only** from
+`SEED_ADMIN_PASSWORD` / `SEED_JEWELLER_PASSWORD` / `SEED_CUSTOMER_PASSWORD` in
+`server/.env` (`server/.env.example` ships `change-me` placeholders — **no real
+password is committed**). Admin and jeweller sign in at `/staff/login`; the
+customer at `/login`.
 
 ---
 
