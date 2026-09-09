@@ -1,17 +1,24 @@
-name: Deploy storefront to GitHub Pages
+name: Deploy static storefront to GitHub Pages
 
-# Builds the React client and publishes it to GitHub Pages.
+# Publishes a READ-ONLY storefront to GitHub Pages — no backend.
 #
-# The API + database are NOT hosted here (Pages is static only) — deploy those
-# separately (see docs/DEPLOYMENT.md) and set a repo variable `VITE_API_URL`
-# to the public API URL, then re-run this workflow.
+# The workflow spins up Postgres, runs the real migrate + seed, exports the
+# whole catalogue (categories, products, shops) to client/public/data/catalog.json,
+# then builds the SPA in static mode (VITE_STATIC=true) so it reads that file
+# instead of calling an API. jewellery-images/ is copied into the site.
+#
+# Browsing, categories, filters, search, product pages and shop pages work.
+# Accounts, cart, checkout, appointments and the dashboards show a "run locally"
+# notice — they need the Express API (see the repo README / docs/DEPLOYMENT.md).
 
 on:
   push:
     branches: [main]
     paths:
       - 'client/**'
+      - 'server/**'
       - 'shared/**'
+      - 'jewellery-images/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
@@ -27,6 +34,32 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: build
+          POSTGRES_PASSWORD: build
+          POSTGRES_DB: build
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U build"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+
+    env:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://build:build@localhost:5432/build?schema=public
+      # None of these are real credentials — this DB and API exist only for the
+      # duration of the build, to produce catalog.json. The static site has no
+      # login. The seed script and the config validator require them to be set.
+      JWT_ACCESS_SECRET: build-only-not-a-secret
+      JWT_REFRESH_SECRET: build-only-not-a-secret
+      SEED_ADMIN_PASSWORD: build-only
+      SEED_JEWELLER_PASSWORD: build-only
+      SEED_CUSTOMER_PASSWORD: build-only
+
     steps:
       - uses: actions/checkout@v4
 
@@ -34,22 +67,34 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: client/package-lock.json
 
-      - name: Install client deps
-        run: npm --prefix client ci
+      - name: Install deps
+        run: |
+          npm ci
+          npm --prefix server ci
+          npm --prefix client ci
 
-      - name: Build
+      - name: Migrate + seed a throwaway database
+        working-directory: server
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+          node prisma/seed.js
+
+      - name: Start the API and export the catalogue
+        run: |
+          node server/src/server.js &
+          for i in $(seq 1 30); do curl -sf http://localhost:4000/api/health && break || sleep 1; done
+          node server/scripts/export-catalog.mjs
+          kill %1 || true
+
+      - name: Build the static storefront
         env:
-          # Project site is served from https://<user>.github.io/<repo>/
+          VITE_STATIC: 'true'
           VITE_BASE: /${{ github.event.repository.name }}/
-          # Public API URL. Repo variable `VITE_API_URL` overrides; otherwise use
-          # the Render blueprint's predictable API URL (render.yaml names the
-          # service `swarna-prabha-api`). The storefront still publishes even if
-          # the API isn't deployed yet — it just shows empty/error states.
-          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://swarna-prabha-api.onrender.com' }}
         run: |
           npm --prefix client run build
+          cp -r jewellery-images client/dist/jewellery-images
           cp client/dist/index.html client/dist/404.html
 
       - uses: actions/upload-pages-artifact@v3

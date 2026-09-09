@@ -15,12 +15,17 @@ export function formatMoney(amount, currency = 'INR') {
 }
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const IS_STATIC = import.meta.env.VITE_STATIC === 'true';
+// In the static build there is no API — assets (jewellery-images/) are copied
+// into the site under its base path (e.g. /swarna-prabha/). Otherwise use the
+// API origin, or a bare relative path in local dev (the Vite proxy handles it).
+const ASSET_BASE = API_BASE || (IS_STATIC ? import.meta.env.BASE_URL.replace(/\/$/, '') : '');
 
 /** Resolve an API-relative asset path (/jewellery-images/… or /uploads/…) to a full URL. */
 export function assetUrl(pathOrUrl) {
   if (!pathOrUrl) return '';
   if (/^(https?:)?\/\//.test(pathOrUrl) || pathOrUrl.startsWith('data:')) return pathOrUrl;
-  return `${API_BASE}${pathOrUrl.startsWith('/') ? '' : '/'}${pathOrUrl}`;
+  return `${ASSET_BASE}${pathOrUrl.startsWith('/') ? '' : '/'}${pathOrUrl}`;
 }
 
 export function formatDate(value, opts = { month: 'long', day: 'numeric', year: 'numeric' }) {

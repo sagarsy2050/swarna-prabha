@@ -20,7 +20,8 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:seed": "node prisma/seed.js",
     "prisma:studio": "prisma studio",
-    "audit": "node scripts/workflow-audit.mjs"
+    "audit": "node scripts/workflow-audit.mjs",
+    "catalog:export": "node scripts/export-catalog.mjs"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

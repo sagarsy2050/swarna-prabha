@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Gem, Menu, X, LogOut, User, ShoppingBag } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { useCart } from '@/lib/CartContext';
+import { IS_STATIC } from '@/api/client';
 
 const baseLinks = [
   { to: '/catalog', label: 'Jewellery' },
@@ -101,6 +102,15 @@ export default function Navbar() {
                 <LogOut className="w-4 h-4" /> Sign out
               </button>
             </>
+          ) : IS_STATIC ? (
+            <a
+              href="https://github.com/sagarsy2050/swarna-prabha"
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm text-neutral-600 hover:text-neutral-900"
+            >
+              View source
+            </a>
           ) : (
             <>
               <Link to="/login" className="text-sm text-neutral-700 hover:text-neutral-900">
@@ -143,6 +153,10 @@ export default function Navbar() {
                   <LogOut className="w-4 h-4" /> Sign out
                 </button>
               </>
+            ) : IS_STATIC ? (
+              <a href="https://github.com/sagarsy2050/swarna-prabha" target="_blank" rel="noreferrer" className="text-sm text-neutral-700">
+                View source
+              </a>
             ) : (
               <>
                 <Link to="/login" className="text-sm text-neutral-700">

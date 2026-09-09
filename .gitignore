@@ -42,6 +42,6 @@ server/uploads-test/
 
 # raw source corpora — NOT part of the deployable app (the app serves
 # jewellery-images/). Large binary trees; keep them out of git / GitHub.
-data/
+/data/
 *.zip
-ml/
+/ml/

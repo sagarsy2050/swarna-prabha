@@ -377,29 +377,33 @@ customer-cannot-confirm), RBAC across all three roles, and admin dashboard data.
 
 ## Deployment
 
-Two parts (GitHub Pages is static-only, so the API lives elsewhere):
+### GitHub Pages — read-only demo (no backend needed)
 
-| Part | Host | How |
-|---|---|---|
-| Storefront (`client/`) | **GitHub Pages** | automated by `.github/workflows/deploy.yml` on push to `main` (paths `client/**`, `shared/**`) or manual dispatch |
-| API + PostgreSQL (`server/`) | **Render** free tier | `render.yaml` blueprint |
+`.github/workflows/deploy.yml` runs on every push to `main`. In CI it spins up
+Postgres, runs the real **migrate + seed**, exports the whole catalogue to
+`client/public/data/catalog.json`, then builds the SPA in **static mode**
+(`VITE_STATIC=true`) so it reads that file instead of calling an API;
+`jewellery-images/` is copied into the site.
 
-**Steps** (full walkthrough in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)):
+**Works on the demo:** browsing, categories, filters, search, product pages,
+shop pages.
+**Needs the backend (shows a "run locally" notice):** accounts, cart, checkout,
+appointments, the jeweller/admin dashboards.
 
-1. Repo **Settings → Pages → Source: GitHub Actions** (done). The site publishes
-   to <https://sagarsy2050.github.io/swarna-prabha/>.
-2. On Render: **New → Blueprint → this repo**. It creates `swarna-prabha-db`
-   (PostgreSQL 16) and `swarna-prabha-api`. On the DB shell run
-   `CREATE EXTENSION IF NOT EXISTS vector;`, then on the API shell
-   `node prisma/seed.js`. Set `CORS_ORIGIN=https://sagarsy2050.github.io` and the
-   other `sync:false` vars.
-3. Repo **Settings → Secrets and variables → Actions → Variables** → add
-   `VITE_API_URL` = the Render API URL, then re-run the deploy workflow.
+One-time: repo **Settings → Pages → Source: GitHub Actions**. Site:
+<https://sagarsy2050.github.io/swarna-prabha/>.
 
-**Free-tier caveats:** Render web services sleep after ~15 min idle (~30 s cold
-start); free PostgreSQL is deleted after 90 days; local upload disk is
-ephemeral — use S3/R2 for real files (the classified `jewellery-images/` ship in
-the repo, so they always redeploy).
+### Full app (optional) — Render
+
+`render.yaml` is a blueprint for the complete stack (API + PostgreSQL) on
+Render's free tier: **New → Blueprint → this repo**, enter three seed passwords,
+Apply. It builds, runs `prisma migrate deploy` (which creates the `vector`
+extension) + `prisma/seed.js` at start, and serves the API at
+`https://swarna-prabha-api.onrender.com`. Full walkthrough:
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+_Free-tier caveats: Render web services sleep after ~15 min idle (~30 s cold
+start); free PostgreSQL is deleted after 90 days; the upload disk is ephemeral._
 
 ---
 
