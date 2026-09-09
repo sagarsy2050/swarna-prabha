@@ -78,8 +78,8 @@ substitute image.
 | --- | --- | --- |
 | 1 | Audit · strip all AI · rebrand · image library · new DB | **done** |
 | 2 | Prisma rebuild · catalogue · category↔folder image integrity | **done** |
-| 3 | Shops · cart · checkout · orders · appointments | pending |
-| 4 | Jeweller + admin dashboards · security hardening | pending |
+| 3 | Shops · cart · checkout · orders · appointments | **done** |
+| 4 | Jeweller + admin dashboards | **done** |
 | 5 | Tests · CI/CD · docs · production-readiness report | pending |
 | 6 | Financial document verification module (OCR, no-LLM) | pending |
 
