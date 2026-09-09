@@ -1,0 +1,43 @@
+# Local infrastructure for development & integration tests.
+# `docker compose up -d db` is enough for the app; minio is optional and only
+# needed when testing STORAGE_DRIVER=s3 locally.
+services:
+  db:
+    # pgvector/pgvector adds the `vector` extension on top of stock Postgres 16.
+    image: pgvector/pgvector:pg16
+    container_name: goldenaura-db
+    environment:
+      POSTGRES_USER: goldenaura
+      POSTGRES_PASSWORD: goldenaura
+      POSTGRES_DB: goldenaura
+    # Host port 5434 — the legacy jweellae-db keeps 5433, a default local
+    # Postgres keeps 5432. Container-internal port stays 5432.
+    ports:
+      - "5434:5432"
+    volumes:
+      - goldenaura_pgdata:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goldenaura"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Optional S3-compatible object store for local `STORAGE_DRIVER=s3` testing.
+  minio:
+    image: minio/minio:latest
+    container_name: goldenaura-minio
+    profiles: ["s3"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: goldenaura
+      MINIO_ROOT_PASSWORD: goldenaura-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - goldenaura_miniodata:/data
+
+volumes:
+  goldenaura_pgdata:
+  goldenaura_miniodata:

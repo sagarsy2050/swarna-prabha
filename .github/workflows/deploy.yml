@@ -1,0 +1,64 @@
+name: Deploy storefront to GitHub Pages
+
+# Builds the React client and publishes it to GitHub Pages.
+#
+# The API + database are NOT hosted here (Pages is static only) — deploy those
+# separately (see docs/DEPLOYMENT.md) and set a repo variable `VITE_API_URL`
+# to the public API URL, then re-run this workflow.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'client/**'
+      - 'shared/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install client deps
+        run: npm --prefix client ci
+
+      - name: Build
+        env:
+          # Project site is served from https://<user>.github.io/<repo>/
+          VITE_BASE: /${{ github.event.repository.name }}/
+          # Public API URL — set as a repository variable once the API is deployed.
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+        run: |
+          npm --prefix client run build
+          cp client/dist/index.html client/dist/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: client/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

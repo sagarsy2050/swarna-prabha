@@ -1,0 +1,47 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# env — never commit real values; .env.example files ARE committed
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# build output
+dist/
+build/
+client/dist/
+server/dist/
+
+# prisma
+server/prisma/*.db
+server/prisma/*.db-journal
+
+# uploads (local storage driver)
+server/uploads/
+
+# logs
+*.log
+npm-debug.log*
+logs/
+
+# test / coverage
+coverage/
+.vitest/
+
+# editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.swp
+
+# local test upload fixtures (recreated by the test run)
+server/uploads-test/
+
+# raw source corpora — NOT part of the deployable app (the app serves
+# jewellery-images/). Large binary trees; keep them out of git / GitHub.
+data/
+*.zip
+ml/

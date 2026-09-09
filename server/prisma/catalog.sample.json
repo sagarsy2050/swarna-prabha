@@ -1,0 +1,57 @@
+{
+  "items": [
+    {
+      "externalId": "SAMPLE-RING-001",
+      "title": "Halo Cushion Ring",
+      "category": "ring",
+      "categoryCode": "RING",
+      "description": "A cushion-cut centre stone framed by a pavé halo.",
+      "materials": "18k White Gold, 1.0ct Diamond",
+      "basePrice": 2400,
+      "currency": "USD",
+      "customizableParts": "metal, ring size, stone size",
+      "styles": "Classic;Bridal;Luxury",
+      "occasions": "Wedding;Engagement",
+      "imageUrl": "https://images.unsplash.com/photo-1602751584552-8ba73aad10e1?w=1200&q=80"
+    },
+    {
+      "externalId": "SAMPLE-EAR-001",
+      "title": "Threader Bar Earrings",
+      "category": "earrings",
+      "categoryCode": "EARRING",
+      "description": "Minimal linear threaders that draw the eye downward.",
+      "materials": "14k Gold",
+      "basePrice": 340,
+      "styles": "Minimal;Contemporary",
+      "occasions": "Everyday;Gift",
+      "suitableFaceShapes": "ROUND;OBLONG",
+      "suitableEarSizes": "SMALL;MEDIUM"
+    },
+    {
+      "externalId": "SAMPLE-NOSE-001",
+      "title": "Seed Pearl Nose Pin",
+      "category": "pendant",
+      "categoryCode": "NOSE_JEWELLERY",
+      "description": "A single seed pearl on a fine gold pin.",
+      "materials": "18k Gold, Pearl",
+      "basePrice": 190,
+      "styles": "Classic;Bridal",
+      "occasions": "Wedding;Festive",
+      "suitableFaceShapes": "OVAL;HEART;PEAR",
+      "suitableNoseSizes": "SMALL;MEDIUM"
+    },
+    {
+      "externalId": "SAMPLE-HARAM-001",
+      "title": "Kasu Coin Haram",
+      "category": "necklace",
+      "categoryCode": "HARAM",
+      "description": "A long temple haram of stamped gold coins.",
+      "materials": "22k Gold",
+      "basePrice": 6100,
+      "styles": "Traditional;Temple;Bridal",
+      "occasions": "Wedding;Festive",
+      "suitableFaceShapes": "OVAL;SQUARE",
+      "suitableNeckLengths": "MEDIUM;LONG"
+    }
+  ]
+}

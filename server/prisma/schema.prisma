@@ -1,0 +1,380 @@
+// Swarna Prabha data model — a deterministic, no-LLM jewellery marketplace.
+// Customers browse a catalogue of real, category-classified products, discover
+// jeweller shops, book appointments and buy online. No AI/ML models are part of
+// this schema (an optional image-similarity layer, if ever added, brings its own
+// migration on top of the pre-enabled `vector` extension).
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  CUSTOMER
+  JEWELLER
+  ADMIN
+}
+
+enum ProductAvailability {
+  IN_STOCK
+  MADE_TO_ORDER
+  UNAVAILABLE
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  READY
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+  FAILED
+}
+
+enum AppointmentServiceType {
+  CONSULTATION
+  VIEWING
+  FITTING
+  VALUATION
+  OTHER
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+// ─── Identity ────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(CUSTOMER)
+  fullName     String?
+  phone        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  customerProfile CustomerProfile?
+  jewellerProfile JewellerProfile?
+  refreshTokens   RefreshToken[]
+  passwordResets  PasswordResetToken[]
+
+  products       Product[]       @relation("JewellerProducts")
+  inventoryItems InventoryItem[] @relation("JewellerInventory")
+  files          FileObject[]    @relation("FileOwner")
+
+  cart                   Cart?
+  ordersAsCustomer       Order[]       @relation("CustomerOrders")
+  ordersAsJeweller       Order[]       @relation("JewellerOrders")
+  appointmentsAsCustomer Appointment[] @relation("CustomerAppointments")
+  appointmentsAsJeweller Appointment[] @relation("JewellerAppointments")
+
+  @@index([role])
+}
+
+model CustomerProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  address   String?
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// A jeweller's public shop. One per JEWELLER user. This is the "shop" entity the
+// customer discovers and books against — shopId == jewellerId elsewhere.
+model JewellerProfile {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shopName         String
+  slug             String   @unique
+  description      String?
+  logoPath         String?
+  addressLine1     String?
+  addressLine2     String?
+  city             String?
+  region           String?
+  postalCode       String?
+  country          String?
+  phone            String?
+  email            String?
+  // { "mon": "10:00-19:00", "tue": "10:00-19:00", ..., "sun": "closed" }
+  openingHours     Json?
+  // Bookable slot templates per weekday, e.g.
+  // { "mon": ["10:00","11:00","12:00","15:00","16:00"], ... }
+  appointmentSlots Json?
+  verified         Boolean  @default(false)
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([active])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  userAgent String?
+  ip        String?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ─── Catalogue ───────────────────────────────────────────────────────────────
+
+// A jewellery category. `folder` is the ONLY approved image source for products
+// in this category (a subdirectory of the repo-root `jewellery-images/`).
+model JewelleryCategory {
+  id          String   @id @default(cuid())
+  code        String   @unique // RING, EARRING, NECKLACE, BANGLE, BRACELET, BRIDAL, ...
+  name        String
+  slug        String   @unique
+  folder      String   @unique // e.g. "rings" — dir under jewellery-images/
+  description String?
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+
+  @@index([active])
+}
+
+model Product {
+  id           String              @id @default(cuid())
+  name         String
+  categoryId   String
+  category     JewelleryCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  jewellerId   String
+  jeweller     User                @relation("JewellerProducts", fields: [jewellerId], references: [id], onDelete: Cascade)
+  description  String?
+  metal        String?
+  purity       String?
+  weightGrams  Decimal?            @db.Decimal(10, 3)
+  stone        String?
+  price        Decimal             @db.Decimal(12, 2)
+  currency     String              @default("INR")
+  stock        Int                 @default(0)
+  availability ProductAvailability @default(IN_STOCK)
+  isPublished  Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  images       ProductImage[]
+  cartItems    CartItem[]
+  orderItems   OrderItem[]
+  appointments Appointment[]
+
+  @@index([categoryId])
+  @@index([jewellerId])
+  @@index([price])
+  @@index([metal])
+  @@index([purity])
+  @@index([isPublished])
+}
+
+// A product photo. `path` is a filename inside `jewellery-images/<folder>/`, and
+// `folder` must equal the product's category folder — enforced by the backend
+// (services/image.service.js) on every create/update.
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  folder    String
+  path      String
+  alt       String?
+  sortOrder Int      @default(0)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([productId, path])
+  @@index([productId])
+}
+
+// ─── Cart & orders ───────────────────────────────────────────────────────────
+
+model Cart {
+  id         String     @id @default(cuid())
+  customerId String     @unique
+  customer   User       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  items      CartItem[]
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  cartId    String
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(1)
+  unitPrice Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartId, productId])
+  @@index([cartId])
+}
+
+// One order per jeweller. A cart spanning several jewellers is split into one
+// Order each at checkout.
+model Order {
+  id              String      @id @default(cuid())
+  customerId      String
+  customer        User        @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: Restrict)
+  jewellerId      String
+  jeweller        User        @relation("JewellerOrders", fields: [jewellerId], references: [id], onDelete: Restrict)
+  status          OrderStatus @default(PENDING)
+  subtotal        Decimal     @db.Decimal(12, 2)
+  total           Decimal     @db.Decimal(12, 2)
+  currency        String      @default("INR")
+  contactName     String
+  contactPhone    String
+  shippingAddress Json
+  placedAt        DateTime    @default(now())
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  items   OrderItem[]
+  payment Payment?
+
+  @@index([customerId])
+  @@index([jewellerId])
+  @@index([status])
+  @@index([placedAt])
+}
+
+model OrderItem {
+  id                String   @id @default(cuid())
+  orderId           String
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId         String?
+  product           Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  nameSnapshot      String
+  imagePathSnapshot String?
+  unitPrice         Decimal  @db.Decimal(12, 2)
+  quantity          Int
+  lineTotal         Decimal  @db.Decimal(12, 2)
+
+  @@index([orderId])
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  orderId   String        @unique
+  order     Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount    Decimal       @db.Decimal(12, 2)
+  currency  String        @default("INR")
+  method    String        @default("manual")
+  reference String?
+  status    PaymentStatus @default(PENDING)
+  paidAt    DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+// ─── Appointments ────────────────────────────────────────────────────────────
+
+model Appointment {
+  id            String                 @id @default(cuid())
+  customerId    String
+  customer      User                   @relation("CustomerAppointments", fields: [customerId], references: [id], onDelete: Cascade)
+  jewellerId    String
+  jeweller      User                   @relation("JewellerAppointments", fields: [jewellerId], references: [id], onDelete: Cascade)
+  productId     String?
+  product       Product?               @relation(fields: [productId], references: [id], onDelete: SetNull)
+  serviceType   AppointmentServiceType @default(CONSULTATION)
+  date          DateTime               @db.Date
+  timeSlot      String
+  status        AppointmentStatus      @default(PENDING)
+  customerName  String
+  customerPhone String
+  notes         String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  // A partial unique index — active bookings only — is added in the migration:
+  //   CREATE UNIQUE INDEX "Appointment_active_slot_key"
+  //   ON "Appointment" ("jewellerId", "date", "timeSlot")
+  //   WHERE status IN ('PENDING', 'CONFIRMED');
+  @@index([customerId])
+  @@index([jewellerId, date])
+  @@index([status])
+}
+
+// ─── Inventory & files ───────────────────────────────────────────────────────
+
+model InventoryItem {
+  id           String   @id @default(cuid())
+  jewellerId   String?
+  jeweller     User?    @relation("JewellerInventory", fields: [jewellerId], references: [id], onDelete: SetNull)
+  sku          String   @unique
+  name         String
+  category     String?
+  material     String?
+  quantity     Int      @default(0)
+  unitCost     Decimal  @default(0) @db.Decimal(12, 2)
+  reorderLevel Int      @default(0)
+  location     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([jewellerId])
+}
+
+model FileObject {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  provider  String
+  url       String
+  mime      String?
+  size      Int?
+  purpose   String?
+  ownerId   String?
+  owner     User?    @relation("FileOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@index([ownerId])
+}
