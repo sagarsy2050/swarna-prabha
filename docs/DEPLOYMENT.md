@@ -1,79 +1,81 @@
 # Deployment
 
-Swarna Prabha has two deployable parts:
+Two hosts:
 
-| Part | What | Free host |
-| --- | --- | --- |
-| **Storefront** (`client/`) | static React build | **GitHub Pages** — automated by `.github/workflows/deploy.yml` |
-| **API + database** (`server/`) | Express + PostgreSQL | **Render** free tier — blueprint in `render.yaml` |
+| Part | Host | Automation |
+|---|---|---|
+| **API + PostgreSQL** (`server/`) | **Render** free tier | `render.yaml` blueprint — one click + 4 values |
+| **Storefront** (`client/`) | **GitHub Pages** | `.github/workflows/deploy.yml` — runs on every push to `main` |
 
-GitHub Pages is static only, so the API cannot live there. The two are wired
-together by one setting: the storefront build needs `VITE_API_URL` pointing at
-the deployed API.
+GitHub Pages is static-only, so the API lives on Render. They are wired together
+by one setting — the API URL the storefront build targets.
 
 ---
 
-## 1. Storefront → GitHub Pages
+## 1. API + database → Render (install-ready)
 
-Already wired. On every push to `main` that touches `client/`, the workflow
-builds the client and publishes it.
+1. **Render dashboard → New → Blueprint → select this repo.**
+2. Render reads `render.yaml` and creates:
+   - `swarna-prabha-db` — PostgreSQL 16
+   - `swarna-prabha-api` — the Express API at
+     `https://swarna-prabha-api.onrender.com`
+   - `swarna-prabha-web` — an optional static copy of the storefront
+3. Render prompts you **once** for the 4 `sync: false` values:
+   | Variable | Enter |
+   |---|---|
+   | `SEED_ADMIN_PASSWORD` | a password for `admin@swarnaprabha.local` |
+   | `SEED_JEWELLER_PASSWORD` | a password for `jeweller@` / `jeweller2@swarnaprabha.local` |
+   | `SEED_CUSTOMER_PASSWORD` | a password for `customer@swarnaprabha.local` |
+   | `CORS_ORIGIN` | pre-filled `https://sagarsy2050.github.io` — add your own domain (comma-separated) if you have one |
+4. Click **Apply**. Everything else is automatic:
+   - **build:** `npm ci && npx prisma generate`
+   - **pre-deploy:** `npx prisma migrate deploy` — this also runs
+     `CREATE EXTENSION IF NOT EXISTS "vector"` (pgvector is on Render's allowed
+     list) — then `node prisma/seed.js` (idempotent: 4 users, 6 categories,
+     96 products from `jewellery-images/`)
+   - **start:** `node src/server.js`
+   - **health check:** `/api/health`
 
-One-time setup on the repo:
+No manual SQL, no manual seed. Re-deploys re-run migrate + seed safely.
 
-1. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
-2. Push to `main` (or run the workflow manually from the Actions tab).
-3. The site appears at `https://<user>.github.io/<repo>/`.
+**Sign in after deploy:** the seed emails are fixed
+(`admin@` / `jeweller@` / `jeweller2@` / `customer@swarnaprabha.local`); the
+passwords are the ones you typed in step 3. Admin/jeweller → `/staff/login`,
+customer → `/login`.
 
-The build sets `VITE_BASE=/<repo>/` automatically so asset paths and client-side
-routing work under the sub-path. A `404.html` copy of `index.html` is emitted so
-deep links (`/catalog/rings`) resolve.
+## 2. Storefront → GitHub Pages
 
-Until step 2 below is done, the site loads but the catalogue is empty — there is
-no API for it to call yet.
+Already automated. One-time repo setting: **Settings → Pages → Source: GitHub
+Actions** (done). The workflow:
 
-## 2. API + database → Render
+- builds with `VITE_BASE=/swarna-prabha/` so asset & route paths work under the
+  sub-path,
+- sets `VITE_API_URL` to the repo variable `VITE_API_URL` if present, otherwise
+  falls back to `https://swarna-prabha-api.onrender.com` (the Render service
+  above),
+- copies `index.html` → `404.html` so deep links resolve,
+- publishes to <https://sagarsy2050.github.io/swarna-prabha/>.
 
-1. Push this repo to GitHub (done — see below).
-2. On Render: **New → Blueprint**, pick this repo. Render reads `render.yaml` and
-   creates `swarna-prabha-db` (PostgreSQL 16) and `swarna-prabha-api`.
-3. The database needs the `vector` extension. On the Render database shell:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS vector;
-   ```
-   (The first migration also issues this; running it manually first avoids a
-   permissions race on some plans.)
-4. Set the API service's env vars in the dashboard (those marked `sync: false`):
-   - `CORS_ORIGIN` = `https://<user>.github.io` (the Pages origin, no path)
-   - `PUBLIC_UPLOAD_BASE_URL` = `https://swarna-prabha-api.onrender.com/uploads`
-   - `SEED_ADMIN_PASSWORD`, `SEED_JEWELLER_PASSWORD`, `SEED_CUSTOMER_PASSWORD`
-   - S3\_\* only if you switch `STORAGE_DRIVER` to `s3`
-5. Deploy. `preDeployCommand` runs `prisma migrate deploy`. Then run the seed
-   once from the service shell:
-   ```bash
-   node prisma/seed.js
-   ```
-6. Copy the API URL (e.g. `https://swarna-prabha-api.onrender.com`).
+So after step 1, just **re-run the "Deploy storefront to GitHub Pages" workflow**
+(Actions tab → Run workflow) and the live site talks to the live API.
 
-## 3. Connect the two
+If your Render API has a different URL, set a repo **Variable**
+(`Settings → Secrets and variables → Actions → Variables`) named `VITE_API_URL`
+and re-run the workflow.
 
-1. Repo **Settings → Secrets and variables → Actions → Variables → New variable**:
-   `VITE_API_URL` = the Render API URL from step 2.6.
-2. Re-run the **Deploy storefront to GitHub Pages** workflow.
+## Free-tier caveats
 
-The storefront now talks to the live API.
-
-### Notes / limits of the free tiers
-
-- Render free web services **sleep after ~15 min idle**; the first request after
-  a sleep takes ~30 s to wake.
+- Render free web services **sleep after ~15 min idle**; first request after a
+  sleep takes ~30 s.
 - Render free PostgreSQL is deleted after 90 days unless upgraded.
-- Render free disks are ephemeral — uploaded files (local `STORAGE_DRIVER`) do
-  not survive a redeploy. Use S3/R2 for anything real. The classified
-  `jewellery-images/` are in the repo, so they always redeploy with the API.
-- Pages serves the storefront over HTTPS from `*.github.io`; the API must also
-  be HTTPS (Render provides this) or the browser blocks mixed content.
+- Render disks are ephemeral — user uploads (`STORAGE_DRIVER=local`) do not
+  survive a redeploy. Set `STORAGE_DRIVER=s3` + the `S3_*` vars for real files.
+  The classified `jewellery-images/` ship in the repo, so they always redeploy.
+- Pages serves over HTTPS from `*.github.io`; the API must also be HTTPS (Render
+  provides this) or the browser blocks mixed content.
 
-## Custom domain (optional)
+## Local development
 
-Point a CNAME at `<user>.github.io`, add the domain under Settings → Pages, and
-add it to the API's `CORS_ORIGIN`.
+See [`docs/SETUP.md`](SETUP.md). Locally the client uses the Vite dev proxy
+(`VITE_API_URL` empty), so there is never a CORS or wrong-URL problem —
+everything is same-origin on `http://localhost:5173`.

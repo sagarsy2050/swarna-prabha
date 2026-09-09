@@ -43,8 +43,11 @@ jobs:
         env:
           # Project site is served from https://<user>.github.io/<repo>/
           VITE_BASE: /${{ github.event.repository.name }}/
-          # Public API URL — set as a repository variable once the API is deployed.
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          # Public API URL. Repo variable `VITE_API_URL` overrides; otherwise use
+          # the Render blueprint's predictable API URL (render.yaml names the
+          # service `swarna-prabha-api`). The storefront still publishes even if
+          # the API isn't deployed yet — it just shows empty/error states.
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://swarna-prabha-api.onrender.com' }}
         run: |
           npm --prefix client run build
           cp client/dist/index.html client/dist/404.html

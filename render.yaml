@@ -1,11 +1,17 @@
-# Render blueprint for Swarna Prabha.
-# One API service + one static site + one managed PostgreSQL. Not deployed
-# automatically — see docs/DEPLOYMENT.md. Adjust `plan`, region, and the
-# S3/mail secrets in the Render dashboard before the first deploy.
+# Render blueprint for Swarna Prabha — install-ready.
 #
-# NOTE: the managed database must have the `vector` extension available. Render's
-# Postgres 16 supports `CREATE EXTENSION vector` (run once), which the initial
-# migration performs.
+# Deploy: Render dashboard → New → Blueprint → pick this repo.
+# Render will prompt you once for the 4 values marked `sync: false` below
+# (three seed passwords + the storefront origin). Everything else is automatic:
+#
+#   build      : npm ci && prisma generate            (API)   /  npm ci && vite build  (web)
+#   pre-deploy : prisma migrate deploy  (creates the `vector` extension + schema)
+#                then  node prisma/seed.js  (idempotent upserts)
+#   start      : node src/server.js
+#
+# The API is served at https://swarna-prabha-api.onrender.com
+# The static build is also published here, but the canonical storefront is
+# GitHub Pages (see .github/workflows/deploy.yml + docs/DEPLOYMENT.md).
 
 databases:
   - name: swarna-prabha-db
@@ -15,17 +21,17 @@ databases:
     postgresMajorVersion: "16"
 
 services:
-  # ── API (Express + Prisma) ────────────────────────────────────────────────
+  # ── API (Express + Prisma + PostgreSQL) ─────────────────────────────────────
   - type: web
     name: swarna-prabha-api
     runtime: node
     rootDir: server
     plan: free
+    autoDeploy: true
     buildCommand: npm ci && npx prisma generate
-    preDeployCommand: npx prisma migrate deploy
+    preDeployCommand: npx prisma migrate deploy && node prisma/seed.js
     startCommand: node src/server.js
     healthCheckPath: /api/health
-    autoDeploy: false
     envVars:
       - key: NODE_ENV
         value: production
@@ -35,6 +41,8 @@ services:
         fromDatabase:
           name: swarna-prabha-db
           property: connectionString
+
+      # Auth — Render generates strong random values, no action needed.
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
@@ -43,37 +51,33 @@ services:
         value: 1h
       - key: JWT_REFRESH_TTL
         value: 30d
-      # Set to the static site's URL once it exists (see docs/DEPLOYMENT.md).
+
+      # Storefront origin(s) allowed by CORS. Default is the GitHub Pages site;
+      # Render will let you override it at blueprint time (add your own domain,
+      # comma-separated, if you have one).
       - key: CORS_ORIGIN
+        value: https://sagarsy2050.github.io
         sync: false
+
       - key: PAYMENT_DRIVER
         value: manual
       - key: MAIL_DRIVER
         value: console
       - key: MAIL_FROM
         value: "Swarna Prabha <no-reply@swarnaprabha.local>"
-      # File storage: switch to s3 for anything real (Render disks are ephemeral
-      # on free/plan restarts). Fill these in the dashboard, then set STORAGE_DRIVER=s3.
+
+      # File storage. Render free disks are ephemeral; the classified
+      # jewellery-images/ ship in the repo so they always redeploy. Switch to
+      # S3/R2 for user uploads by setting STORAGE_DRIVER=s3 and the S3_* vars.
       - key: STORAGE_DRIVER
         value: local
       - key: UPLOAD_DIR
         value: ./uploads
       - key: PUBLIC_UPLOAD_BASE_URL
-        sync: false
-      - key: S3_ENDPOINT
-        sync: false
-      - key: S3_REGION
-        value: us-east-1
-      - key: S3_BUCKET
-        sync: false
-      - key: S3_ACCESS_KEY_ID
-        sync: false
-      - key: S3_SECRET_ACCESS_KEY
-        sync: false
-      - key: S3_PUBLIC_BASE_URL
-        sync: false
-      - key: SEED_ADMIN_EMAIL
-        sync: false
+        value: https://swarna-prabha-api.onrender.com/uploads
+
+      # Seed account passwords — YOU choose these at blueprint time. Emails are
+      # fixed (admin@ / jeweller@ / jeweller2@ / customer@swarnaprabha.local).
       - key: SEED_ADMIN_PASSWORD
         sync: false
       - key: SEED_JEWELLER_PASSWORD
@@ -81,19 +85,18 @@ services:
       - key: SEED_CUSTOMER_PASSWORD
         sync: false
 
-  # ── Web (static React build) ─────────────────────────────────────────────
+  # ── Web (static React build) — optional; GitHub Pages is the primary host ───
   - type: web
     name: swarna-prabha-web
     runtime: static
     rootDir: client
     plan: free
+    autoDeploy: true
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
-    autoDeploy: false
     envVars:
-      # The API service's URL, e.g. https://swarna-prabha-api.onrender.com
       - key: VITE_API_URL
-        sync: false
+        value: https://swarna-prabha-api.onrender.com
     routes:
       - type: rewrite
         source: /*

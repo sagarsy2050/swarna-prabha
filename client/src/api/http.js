@@ -105,7 +105,20 @@ async function request(method, path, { body, query, headers, isForm, _retry } = 
   }
 
   const text = await res.text();
-  const payload = text ? JSON.parse(text) : {};
+  let payload = {};
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      // Not JSON — usually means the request reached a static host / proxy
+      // instead of the API (e.g. a production build with the wrong VITE_API_URL,
+      // or the API is down).
+      throw new ApiError(
+        `The API did not return JSON (HTTP ${res.status}). It may be unreachable or misconfigured (check VITE_API_URL).`,
+        { status: res.status, code: 'API_UNREACHABLE' },
+      );
+    }
+  }
   if (!res.ok) {
     const err = payload.error || {};
     throw new ApiError(err.message || res.statusText || 'Request failed', {
