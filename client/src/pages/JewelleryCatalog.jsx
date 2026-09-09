@@ -69,8 +69,10 @@ export default function JewelleryCatalog() {
   useEffect(loadList, [loadList]);
 
   const setCategory = (slug) => {
+    // Navigating to a path string already produces a URL with no query params.
+    // Calling setSearchParams({}) here as well raced with (and overrode) this
+    // navigation, so the category chip appeared to do nothing.
     navigate(slug ? `/catalog/${slug}` : '/catalog');
-    setSearchParams({});
   };
 
   const patchFilters = (next) => {
